@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-950 text-slate-100 min-h-screen font-sans m-0;
+  }
+}
+
+.glass-panel {
+  @apply bg-slate-900/50 backdrop-blur-md border border-slate-700/50 rounded-xl shadow-xl;
+}
+
+@keyframes flash-red {
+  0% { background-color: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.8); }
+  50% { background-color: rgba(239, 68, 68, 0.8); border-color: rgba(239, 68, 68, 1); box-shadow: 0 0 20px rgba(239, 68, 68, 0.6); }
+  100% { background-color: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.8); }
+}
+
+.seal-alert {
+  animation: flash-red 1s infinite;
+}
+
+@keyframes pulse-amber {
+  0% { background-color: rgba(245, 158, 11, 0.1); border-color: rgba(245, 158, 11, 0.4); box-shadow: 0 0 10px rgba(245, 158, 11, 0.2); }
+  50% { background-color: rgba(245, 158, 11, 0.3); border-color: rgba(245, 158, 11, 1); box-shadow: 0 0 30px rgba(245, 158, 11, 0.8); }
+  100% { background-color: rgba(245, 158, 11, 0.1); border-color: rgba(245, 158, 11, 0.4); box-shadow: 0 0 10px rgba(245, 158, 11, 0.2); }
+}
+
+.arbitration-alert {
+  animation: pulse-amber 1.5s infinite;
+}

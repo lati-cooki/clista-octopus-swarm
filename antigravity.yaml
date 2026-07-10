@@ -1,0 +1,34 @@
+project: clista-octopus-swarm
+version: 0.1.0
+
+orchestration:
+  entrypoint: mantle.MantleOrchestrator
+  
+ledger:
+  type: memory_bank
+  capacity: 1000.0
+  
+security:
+  model_armor:
+    seal_phase:
+      allow_exceptions: false
+      isolation_level: strict
+
+agents:
+  logic_arm:
+    tools:
+      - reflex_arc.probe_context
+      - reflex_arc.reflect_schema
+      - reflex_arc.verify_lineage
+      - action_tools.execute_secure_sandbox
+      - action_tools.query_clista_knowledge_graph
+      - moltbook_archive.query_hive_mind
+  creative_arm:
+    tools:
+      - reflex_arc.probe_context
+      - reflex_arc.reflect_schema
+      - reflex_arc.verify_lineage
+      - action_tools.fetch_external_context
+      - moltbook_archive.query_hive_mind
+  arbitration_arm:
+    system_instruction: "You are the Apex Arbitrator. The swarm has deadlocked. You must evaluate the provided competing decisions. Do not generate new solutions. Identify the mathematically/logically superior path and return it as your crystallized_decision with a confidence of 1.0."

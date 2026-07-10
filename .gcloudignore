@@ -1,0 +1,9 @@
+.gcloudignore
+.git
+.gitignore
+.venv/
+__pycache__/
+*.pyc
+clista-swarm-ui/node_modules/
+clista-swarm-ui/dist/
+node_modules/
