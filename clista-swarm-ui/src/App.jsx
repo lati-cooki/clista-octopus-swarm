@@ -19,7 +19,9 @@ function App() {
   }, [logs]);
 
   const connectWebSocket = () => {
-    ws.current = new WebSocket('ws://localhost:8000/ws/octopus');
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.port === '5173' ? 'localhost:8000' : window.location.host;
+    ws.current = new WebSocket(`${protocol}//${host}/ws/octopus`);
     
     ws.current.onopen = () => {
       setStatus('CONNECTED');
