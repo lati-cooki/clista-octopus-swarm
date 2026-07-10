@@ -98,7 +98,7 @@ function App() {
       <header className="mb-8 flex justify-between items-end border-b border-slate-800 pb-4">
         <div>
           <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
-            ClisTa Swarm Dashboard
+            Consensus Protocol
           </h1>
           <p className="text-slate-500 text-sm mt-1">Blastema Protocol Telemetry Gateway</p>
         </div>
