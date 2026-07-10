@@ -107,36 +107,29 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
     
     budget.consume(15.0)
     
-    logic_arm = ArmState(
-        arm_id="logic_arm_01",
-        route="mantle->logic",
-        moltbook=MoltbookState(status='ACTIVE', confidence_weight=0.4, crystallized_decision="Optimize for speed and local data sovereignty.")
-    )
-    orchestrator.arms.append(logic_arm)
+    logic_arm = ArmState(arm_id="logic", provider="anthropic", model="claude-3-7-sonnet")
+    creative_arm = ArmState(arm_id="creative", provider="openai", model="o3-mini")
     
-    creative_arm = ArmState(
-        arm_id="creative_arm_01",
-        route="mantle->creative",
-        moltbook=MoltbookState(status='ACTIVE', confidence_weight=1.0)
-    )
+    orchestrator.arms.append(logic_arm)
     orchestrator.arms.append(creative_arm)
     
-    await websocket.send_json(build_payload("SPAWN", "Spawning logic_arm_01 and creative_arm_01..."))
-    await asyncio.sleep(1.5)
+    await websocket.send_json(build_payload("SPAWN", f"Spawning {logic_arm.arm_id} ({logic_arm.provider}) and {creative_arm.arm_id} ({creative_arm.provider})..."))
+    await asyncio.sleep(0.5)
     
-    await websocket.send_json(build_payload("TELEMETRY", "[logic_arm_01] Processing task..."))
-    await asyncio.sleep(1.5)
+    await websocket.send_json(build_payload("TELEMETRY", "Executing live LLM reasoning pathways concurrently..."))
     
-    await websocket.send_json(build_payload("ERROR", "[creative_arm_01] Encountered fatal error: Lost in complex LLM API calls!"))
-    await asyncio.sleep(1)
+    # Execute LLMs concurrently in threads so we don't block the WebSocket event loop
+    results = await asyncio.gather(
+        asyncio.to_thread(logic_arm.evaluate_payload, prompt, True),
+        asyncio.to_thread(creative_arm.evaluate_payload, prompt, True),
+        return_exceptions=True
+    )
     
-    try:
-        raise ValueError("Lost in complex LLM API calls! Stack overflow.")
-    except Exception as e:
-        seal_arm(creative_arm.arm_id, e, creative_arm)
-        
-    await websocket.send_json(build_payload("SEAL", "[creative_arm_01] Reflex failed. Circuit breaker triggered. Sealing node."))
-    await asyncio.sleep(2)
+    # Check for crashes (SEALs)
+    for arm in orchestrator.arms:
+        if arm.moltbook.status == 'SEAL':
+            await websocket.send_json(build_payload("SEAL", f"[{arm.arm_id}] Reflex failed. Circuit breaker triggered. Sealing node."))
+            await asyncio.sleep(1)
     
     await websocket.send_json(build_payload("BLASTEMA", "Decaying budget. Regenerating creative_arm from clean blueprint."))
     await asyncio.sleep(2)
@@ -169,46 +162,54 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
     await websocket.send_json(build_payload("TELEMETRY", "Evaluating Resonant Coherence..."))
     await asyncio.sleep(1)
     
-    # Step 2 & 3: Deadlock Loop
-    for _ in range(2):
-        status = orchestrator.evaluate_resonant_coherence()
-        await websocket.send_json(build_payload("WARNING", f"Coherence {status}. Initiating negotiation pass..."))
-        budget.consume(5.0)
-        orchestrator.broadcast_negotiation()
+    # Real Deadlock Checking
+    status = orchestrator.evaluate_resonant_coherence()
+    
+    if status == "Consensus reached.":
+        await websocket.send_json(build_payload("CONSENSUS", f"Natural consensus achieved without arbitration!"))
+        await asyncio.sleep(1)
+        final_decision = logic_arm.moltbook.crystallized_decision
+        
+        arms_data = [{
+            "arm_id": arm.arm_id,
+            "status": arm.moltbook.status,
+            "confidence_weight": arm.moltbook.confidence_weight,
+            "scratchpad": arm.moltbook.scratchpad or ""
+        } for arm in orchestrator.arms]
+        
+    else:
+        # Step 4: Apex Arbitrator
+        await websocket.send_json(build_payload("WARNING", f"Coherence: {status}. Escalating to Apex Arbitrator..."))
         await asyncio.sleep(1.5)
         
-    await websocket.send_json(build_payload("ERROR", "Max negotiations reached. Escalating to Apex Arbitrator."))
-    await asyncio.sleep(1)
-    
-    # Step 4: Apex Arbitrator
-    await websocket.send_json(build_payload("SPAWN", "Spawning arbitration_arm..."))
-    await asyncio.sleep(1.5)
-    
-    arbitration_arm = ArmState(
-        arm_id="apex_arbitrator",
-        route="mantle->arbitration",
-        moltbook=MoltbookState(status='ACTIVE', confidence_weight=1.0, crystallized_decision=f"APEX ARBITRATION OVERRIDE: {prompt} -> Split Architecture Recommended.")
-    )
-    
-    # Capture all deadlocked arms before overriding
-    arms_data = [{
-        "arm_id": arm.arm_id,
-        "status": arm.moltbook.status,
-        "confidence_weight": arm.moltbook.confidence_weight,
-        "scratchpad": arm.moltbook.scratchpad or f"Execution Trace for {arm.arm_id}:\nAnalyzing payload...\nEvaluating risk vs latency constraints...\nDeadlock reached: Unable to resolve priority."
-    } for arm in orchestrator.arms]
-    
-    arms_data.append({
-        "arm_id": arbitration_arm.arm_id,
-        "status": arbitration_arm.moltbook.status,
-        "confidence_weight": arbitration_arm.moltbook.confidence_weight,
-        "scratchpad": f"GAVEL DROP. Overriding deadlock and forcing regulatory resolution for prompt: {prompt}"
-    })
-    
-    orchestrator.arms = [arbitration_arm]
-    
-    await websocket.send_json(build_payload("ARBITRATION", "[apex_arbitrator] GAVEL DROP. Forcing consensus."))
-    await asyncio.sleep(2)
+        arbitration_arm = ArmState(arm_id="apex", provider="gemini", model="gemini-2.5-pro")
+        await websocket.send_json(build_payload("SPAWN", f"Spawning {arbitration_arm.arm_id} ({arbitration_arm.provider})..."))
+        
+        # Capture all deadlocked arms before overriding
+        arms_data = [{
+            "arm_id": arm.arm_id,
+            "status": arm.moltbook.status,
+            "confidence_weight": arm.moltbook.confidence_weight,
+            "scratchpad": arm.moltbook.scratchpad or ""
+        } for arm in orchestrator.arms]
+        
+        orchestrator.arms = [arbitration_arm]
+        
+        # Run Arbitrator Live
+        await websocket.send_json(build_payload("TELEMETRY", "[apex] Analyzing deadlocked payloads..."))
+        await asyncio.to_thread(arbitration_arm.evaluate_payload, prompt + "\n\nOVERRIDE PREVIOUS DEADLOCK.", True)
+        
+        await websocket.send_json(build_payload("ARBITRATION", "[apex] GAVEL DROP. Forcing consensus."))
+        await asyncio.sleep(1)
+        
+        final_decision = arbitration_arm.moltbook.crystallized_decision
+        
+        arms_data.append({
+            "arm_id": arbitration_arm.arm_id,
+            "status": arbitration_arm.moltbook.status,
+            "confidence_weight": arbitration_arm.moltbook.confidence_weight,
+            "scratchpad": arbitration_arm.moltbook.scratchpad or ""
+        })
     
     final_decision = arbitration_arm.moltbook.crystallized_decision
     from audit_ledger import commit_audit_record
