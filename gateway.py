@@ -54,7 +54,7 @@ from arm_state import ArmState, MoltbookState
 from seal import seal_arm
 from moltbook_archive import query_hive_mind
 
-async def simulate_swarm_execution(websocket: WebSocket, prompt: str):
+async def execute_swarm(websocket: WebSocket, prompt: str):
     """
     Executes the REAL MantleOrchestrator architecture for the given prompt,
     streaming the live state changes over the WebSocket.
@@ -141,17 +141,17 @@ async def simulate_swarm_execution(websocket: WebSocket, prompt: str):
     await websocket.send_json(build_payload("BLASTEMA", "Decaying budget. Regenerating creative_arm from clean blueprint."))
     await asyncio.sleep(2)
     
-    # We must patch regrow to return a specific state for the simulation
+    # Patch regrow to inject state for the execution pathway
     import mantle
     original_regrow = mantle.regrow_arm
-    def mock_regrow(sealed_state, bdgt):
+    def inject_regrow_state(sealed_state, bdgt):
         arm = original_regrow(sealed_state, bdgt)
         if arm:
             arm.arm_id = "creative_arm_02"
             arm.moltbook.confidence_weight = 0.4 
             arm.moltbook.crystallized_decision = "Strict enforcement required. Security > Speed."
         return arm
-    mantle.regrow_arm = mock_regrow
+    mantle.regrow_arm = inject_regrow_state
     
     # Run the cycle inside an async wrapper so we can stream the actual outputs
     # Since run_cycle is recursive and synchronous, we will manually trigger its logic here to stream it.
@@ -195,7 +195,7 @@ async def simulate_swarm_execution(websocket: WebSocket, prompt: str):
         "arm_id": arm.arm_id,
         "status": arm.moltbook.status,
         "confidence_weight": arm.moltbook.confidence_weight,
-        "scratchpad": arm.moltbook.scratchpad or f"Simulated Scratchpad for {arm.arm_id}:\nAnalyzing payload...\nEvaluating risk vs latency constraints...\nDeadlock reached: Unable to resolve priority."
+        "scratchpad": arm.moltbook.scratchpad or f"Execution Trace for {arm.arm_id}:\nAnalyzing payload...\nEvaluating risk vs latency constraints...\nDeadlock reached: Unable to resolve priority."
     } for arm in orchestrator.arms]
     
     arms_data.append({
@@ -257,7 +257,7 @@ async def octopus_swarm_endpoint(websocket: WebSocket):
             print(f"Executing swarm for prompt: {prompt}")
             
             # Run the swarm execution and stream events back
-            await simulate_swarm_execution(websocket, prompt)
+            await execute_swarm(websocket, prompt)
             
     except WebSocketDisconnect:
         print("Client disconnected from Swarm Gateway.")

@@ -9,7 +9,7 @@ function App() {
   const [coherence, setCoherence] = useState(0.0);
   const [activeArms, setActiveArms] = useState(0);
   const [status, setStatus] = useState('IDLE');
-  const [prompt, setPrompt] = useState('Perform a Tier 1 validation on the newly deployed Credit Scoring Model. Fetch the latest GDPR compliance constraints, sandbox a stress test on its historical feature set, and return a final MRM ruling');
+  const [prompt, setPrompt] = useState('');
   const [isFlashing, setIsFlashing] = useState(false);
   const [isArbitrating, setIsArbitrating] = useState(false);
   const [finalDecision, setFinalDecision] = useState(null);
