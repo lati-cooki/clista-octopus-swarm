@@ -50,7 +50,7 @@ async def simulate_swarm_execution(websocket: WebSocket, prompt: str):
     await asyncio.sleep(1.5)
     
     recall_arm = ArmState(arm_id="hive_mind_probe", route="mantle->memory", moltbook=MoltbookState(status='ACTIVE', confidence_weight=1.0))
-    cached_decision = query_hive_mind(prompt, recall_arm)
+    cached_decision = query_hive_mind(query=prompt, arm_state=recall_arm)
     
     if cached_decision:
         await websocket.send_json(build_payload("CONSENSUS", "Hive Mind HIT! Recovered past consensus. 0.0 Compute Cost."))
