@@ -1,0 +1,7 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+clista-swarm-ui/node_modules/
+clista-swarm-ui/dist/
+.DS_Store
