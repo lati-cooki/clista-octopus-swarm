@@ -22,13 +22,13 @@ class RouteRegistry:
         pass
 
 class ArmState:
-    def __init__(self, arm_id: str, route: str = "", provider: str = "openai", model: str = "gpt-4o"):
+    def __init__(self, arm_id: str, route: str = "", provider: str = "openai", model: str = "gpt-4o", moltbook: Optional[MoltbookState] = None):
         self.arm_id = arm_id
         self.route = route
         self.provider = provider.lower()
         self.model = model
         
-        self.moltbook = MoltbookState()
+        self.moltbook = moltbook if moltbook else MoltbookState()
         self.execution_count = 0
         
     def get_route_registry(self):
