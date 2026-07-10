@@ -5,6 +5,7 @@ from blastema import regrow_arm
 from budget import MetabolicBudget
 from moltbook_archive import crystallize_to_memory
 from audit_ledger import commit_audit_record
+from ci_cd_webhook import trigger_deployment_webhook
 import logging
 
 logger = logging.getLogger(__name__)
@@ -114,6 +115,9 @@ class MantleOrchestrator:
                 # Archiving to Hive Mind
                 crystallize_to_memory(prompt, final_decision, avg_confidence)
                 
+                # CI/CD Webhook execution
+                trigger_deployment_webhook(prompt, final_decision, avg_confidence)
+                
                 return final_decision
             return "Consensus reached but no active arms available."
             
@@ -169,5 +173,8 @@ class MantleOrchestrator:
                 
                 self.molt_state()
                 crystallize_to_memory(prompt, final_decision, 1.0)
+                
+                # CI/CD Webhook execution
+                trigger_deployment_webhook(prompt, final_decision, 1.0)
                 
                 return final_decision
