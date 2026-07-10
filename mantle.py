@@ -4,6 +4,7 @@ from seal import seal_arm
 from blastema import regrow_arm
 from budget import MetabolicBudget
 from moltbook_archive import crystallize_to_memory
+from audit_ledger import commit_audit_record
 import logging
 
 logger = logging.getLogger(__name__)
@@ -86,12 +87,29 @@ class MantleOrchestrator:
         
         if status == 'CONSENSUS':
             logger.info("Resonant Coherence Achieved: CONSENSUS reached.")
-            self.molt_state()
-            # Return the unified consensus decision
+            
+            # Pre-molt processing
             active_arms = [a for a in self.arms if a.moltbook.status == 'ACTIVE']
             if active_arms:
                 final_decision = active_arms[0].moltbook.crystallized_decision or "Consensus reached without specific output."
                 avg_confidence = sum(a.moltbook.confidence_weight for a in active_arms) / len(active_arms)
+                
+                # V3 DUAL-TRACK MEMORY: Compile pre-molt audit record
+                arms_data = [{
+                    "arm_id": arm.arm_id,
+                    "status": arm.moltbook.status,
+                    "confidence_weight": arm.moltbook.confidence_weight,
+                    "scratchpad": arm.moltbook.scratchpad
+                } for arm in self.arms]
+                
+                commit_audit_record(
+                    prompt=prompt, 
+                    final_decision=final_decision, 
+                    arms_data=arms_data, 
+                    metadata={"budget_remaining": self.budget.get_remaining(), "coherence": avg_confidence}
+                )
+                
+                self.molt_state()
                 
                 # Archiving to Hive Mind
                 crystallize_to_memory(prompt, final_decision, avg_confidence)
@@ -122,11 +140,34 @@ class MantleOrchestrator:
                     )
                 )
                 
+                # V3 DUAL-TRACK MEMORY: Compile pre-molt audit record including the deadlock override
+                arms_data = [{
+                    "arm_id": arm.arm_id,
+                    "status": arm.moltbook.status,
+                    "confidence_weight": arm.moltbook.confidence_weight,
+                    "scratchpad": arm.moltbook.scratchpad
+                } for arm in self.arms]
+                
+                arms_data.append({
+                    "arm_id": arbitration_arm.arm_id,
+                    "status": arbitration_arm.moltbook.status,
+                    "confidence_weight": arbitration_arm.moltbook.confidence_weight,
+                    "scratchpad": arbitration_arm.moltbook.scratchpad
+                })
+                
+                final_decision = arbitration_arm.moltbook.crystallized_decision
+                
+                commit_audit_record(
+                    prompt=prompt, 
+                    final_decision=final_decision, 
+                    arms_data=arms_data, 
+                    metadata={"budget_remaining": self.budget.get_remaining(), "coherence": 1.0}
+                )
+                
                 self.arms = [arbitration_arm]
                 logger.info("Apex Arbitrator has resolved the deadlock. Forcing consensus.")
                 
                 self.molt_state()
-                final_decision = arbitration_arm.moltbook.crystallized_decision
                 crystallize_to_memory(prompt, final_decision, 1.0)
                 
                 return final_decision
