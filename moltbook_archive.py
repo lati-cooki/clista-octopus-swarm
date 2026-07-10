@@ -23,13 +23,16 @@ def crystallize_to_memory(user_prompt: str, final_decision: str, network_confide
     """Archives a successful consensus into the long-term Vector Memory."""
     logger.info(f"Crystallizing to Hive Mind: '{user_prompt}' with confidence {network_confidence:.2f}")
     if hive_collection is not None:
-        doc_id = get_doc_id(user_prompt)
-        hive_collection.document(doc_id).set({
-            'prompt': user_prompt,
-            'decision': final_decision,
-            'confidence': network_confidence,
-            'timestamp': firestore.SERVER_TIMESTAMP
-        })
+        try:
+            doc_id = get_doc_id(user_prompt)
+            hive_collection.document(doc_id).set({
+                'prompt': user_prompt,
+                'decision': final_decision,
+                'confidence': network_confidence,
+                'timestamp': firestore.SERVER_TIMESTAMP
+            })
+        except Exception as e:
+            logger.error(f"Failed to crystallize to Firestore: {e}")
     else:
         logger.warning("Firestore is not initialized. Memory will not persist.")
 
@@ -40,12 +43,15 @@ def query_hive_mind(query: str, arm_state: ArmState) -> str:
     logger.info(f"[{arm_state.arm_id}] Querying Hive Mind for: '{query}'")
     
     if hive_collection is not None:
-        doc_id = get_doc_id(query)
-        doc = hive_collection.document(doc_id).get()
-        if doc.exists:
-            decision = doc.to_dict().get('decision')
-            logger.info(f"[{arm_state.arm_id}] Hive Mind HIT! Recovered past consensus.")
-            return f"{decision}"
+        try:
+            doc_id = get_doc_id(query)
+            doc = hive_collection.document(doc_id).get()
+            if doc.exists:
+                decision = doc.to_dict().get('decision')
+                logger.info(f"[{arm_state.arm_id}] Hive Mind HIT! Recovered past consensus.")
+                return f"{decision}"
+        except Exception as e:
+            logger.error(f"[{arm_state.arm_id}] Firestore query failed: {e}")
             
     logger.info(f"[{arm_state.arm_id}] Hive Mind MISS. Calculation required.")
     return ""
