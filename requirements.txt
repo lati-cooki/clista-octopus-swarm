@@ -2,3 +2,7 @@ fastapi
 uvicorn
 websockets
 pydantic
+google-cloud-firestore
+openai
+google-generativeai
+anthropic
