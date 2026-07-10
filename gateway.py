@@ -109,8 +109,8 @@ async def simulate_swarm_execution(websocket: WebSocket, prompt: str):
     # We must patch regrow to return a specific state for the simulation
     import mantle
     original_regrow = mantle.regrow_arm
-    def mock_regrow(route, bdgt):
-        arm = original_regrow(route, bdgt)
+    def mock_regrow(sealed_state, bdgt):
+        arm = original_regrow(sealed_state, bdgt)
         if arm:
             arm.arm_id = "creative_arm_02"
             arm.moltbook.confidence_weight = 0.4 
@@ -125,7 +125,7 @@ async def simulate_swarm_execution(websocket: WebSocket, prompt: str):
     dead_arms = [a for a in orchestrator.arms if a.moltbook.status == 'SEAL']
     for arm in dead_arms:
         orchestrator.arms.remove(arm)
-        new_arm = mantle.regrow_arm(arm.route, orchestrator.budget)
+        new_arm = mantle.regrow_arm(arm, orchestrator.budget)
         orchestrator.arms.append(new_arm)
         
     await websocket.send_json(build_payload("SPAWN", "creative_arm_02 online. Resuming route..."))
