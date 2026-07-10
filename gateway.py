@@ -13,6 +13,41 @@ from datetime import datetime
 
 app = FastAPI(title="ClisTa Octopus Swarm API", version="1.0.0")
 
+from fastapi.middleware.cors import CORSMiddleware
+from google.cloud import firestore
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/api/audit/logs")
+async def get_audit_logs():
+    """
+    Fetches the immutable execution history from Firestore.
+    """
+    try:
+        db = firestore.Client()
+        docs = db.collection("clista_audit_logs").order_by(
+            "timestamp", direction=firestore.Query.DESCENDING
+        ).limit(50).stream()
+        
+        logs = []
+        for doc in docs:
+            data = doc.to_dict()
+            if 'timestamp' in data and data['timestamp']:
+                data['timestamp'] = data['timestamp'].isoformat()
+            logs.append(data)
+            
+        return {"status": "success", "data": logs}
+    except Exception as e:
+        print(f"Firestore Error: {e}")
+        return {"status": "error", "message": "Failed to fetch from Firestore. Ensure credentials are set."}
+
+
 from mantle import MantleOrchestrator
 from budget import MetabolicBudget
 from arm_state import ArmState, MoltbookState
