@@ -189,16 +189,40 @@ async def simulate_swarm_execution(websocket: WebSocket, prompt: str):
         route="mantle->arbitration",
         moltbook=MoltbookState(status='ACTIVE', confidence_weight=1.0, crystallized_decision=f"APEX ARBITRATION OVERRIDE: {prompt} -> Split Architecture Recommended.")
     )
+    
+    # Capture all deadlocked arms before overriding
+    arms_data = [{
+        "arm_id": arm.arm_id,
+        "status": arm.moltbook.status,
+        "confidence_weight": arm.moltbook.confidence_weight,
+        "scratchpad": arm.moltbook.scratchpad or f"Simulated Scratchpad for {arm.arm_id}:\nAnalyzing payload...\nEvaluating risk vs latency constraints...\nDeadlock reached: Unable to resolve priority."
+    } for arm in orchestrator.arms]
+    
+    arms_data.append({
+        "arm_id": arbitration_arm.arm_id,
+        "status": arbitration_arm.moltbook.status,
+        "confidence_weight": arbitration_arm.moltbook.confidence_weight,
+        "scratchpad": f"GAVEL DROP. Overriding deadlock and forcing regulatory resolution for prompt: {prompt}"
+    })
+    
     orchestrator.arms = [arbitration_arm]
     
     await websocket.send_json(build_payload("ARBITRATION", "[apex_arbitrator] GAVEL DROP. Forcing consensus."))
     await asyncio.sleep(2)
     
+    final_decision = arbitration_arm.moltbook.crystallized_decision
+    from audit_ledger import commit_audit_record
+    commit_audit_record(
+        prompt=prompt,
+        final_decision=final_decision,
+        arms_data=arms_data,
+        metadata={"budget_remaining": budget.get_remaining(), "coherence": 1.0}
+    )
+    
     orchestrator.molt_state()
     await websocket.send_json(build_payload("MOLT", "Shedding ephemeral scratchpads. Crystallizing to Hive Mind."))
     await asyncio.sleep(1)
     
-    final_decision = arbitration_arm.moltbook.crystallized_decision
     from moltbook_archive import crystallize_to_memory
     crystallize_to_memory(prompt, final_decision, 1.0)
     
