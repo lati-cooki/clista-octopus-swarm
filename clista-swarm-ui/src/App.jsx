@@ -28,7 +28,8 @@ function App() {
   const connectWebSocket = () => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.port === '5173' ? 'localhost:8000' : window.location.host;
-    ws.current = new WebSocket(`${protocol}//${host}/ws/octopus`);
+    const token = "SUPER_SECRET_TOKEN"; // In production, fetch this from a secure store or env
+    ws.current = new WebSocket(`${protocol}//${host}/ws/octopus?token=${token}`);
     
     ws.current.onopen = () => {
       setStatus('CONNECTED');
