@@ -67,7 +67,16 @@ class ArmState:
         )
         
         if enable_tools:
-            system_instruction += "\nYou have access to external tools via the Action Layer. If needed, request tool execution in your scratchpad."
+            system_instruction += (
+                "\n\nYou have access to external tools via the Action Layer.\n"
+                "To invoke a tool, output a specific block in your 'scratchpad':\n"
+                "[TOOL_REQUEST: tool_name({\"kwarg1\": \"value\"})]\n"
+                "Available tools:\n"
+                "1. execute_secure_sandbox(code: str)\n"
+                "2. fetch_external_context(url: str, params: dict)\n"
+                "3. query_clista_knowledge_graph(cypher_query: str)\n"
+                "Make sure you format the JSON arguments correctly inside the TOOL_REQUEST block."
+            )
 
         try:
             if self.provider == "openai":
@@ -109,7 +118,7 @@ class ArmState:
             user_prompt,
             generation_config=genai.GenerationConfig(
                 response_mime_type="application/json",
-                response_schema=MoltbookState.model_json_schema()
+                response_schema=MoltbookState
             )
         )
         parsed_result = MoltbookState.model_validate_json(response.text)
@@ -125,7 +134,17 @@ class ArmState:
             system=instruction,
             messages=[{"role": "user", "content": user_prompt}]
         )
-        parsed_result = MoltbookState.model_validate_json(response.content[0].text)
+        
+        text = response.content[0].text.strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        elif text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+        text = text.strip()
+        
+        parsed_result = MoltbookState.model_validate_json(text)
         self._sync_state(parsed_result)
 
     def _sync_state(self, new_state: MoltbookState):

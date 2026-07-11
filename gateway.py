@@ -25,7 +25,7 @@ app.add_middleware(
 )
 
 @app.get("/api/audit/logs")
-async def get_audit_logs():
+def get_audit_logs():
     """
     Fetches the immutable execution history from Firestore.
     """
@@ -85,7 +85,7 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
     await asyncio.sleep(1.5)
     
     recall_arm = ArmState(arm_id="hive_mind_probe", route="mantle->memory", moltbook=MoltbookState(status='ACTIVE', confidence_weight=1.0))
-    cached_decision = query_hive_mind(query=prompt, arm_state=recall_arm)
+    cached_decision = await asyncio.to_thread(query_hive_mind, query=prompt, arm_state=recall_arm)
     
     if cached_decision:
         await websocket.send_json(build_payload("CONSENSUS", "Hive Mind HIT! Recovered past consensus. 0.0 Compute Cost."))
@@ -211,9 +211,9 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
             "scratchpad": arbitration_arm.moltbook.scratchpad or ""
         })
     
-    final_decision = arbitration_arm.moltbook.crystallized_decision
     from audit_ledger import commit_audit_record
-    commit_audit_record(
+    await asyncio.to_thread(
+        commit_audit_record,
         prompt=prompt,
         final_decision=final_decision,
         arms_data=arms_data,
@@ -225,7 +225,7 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
     await asyncio.sleep(1)
     
     from moltbook_archive import crystallize_to_memory
-    crystallize_to_memory(prompt, final_decision, 1.0)
+    await asyncio.to_thread(crystallize_to_memory, prompt, final_decision, 1.0)
     
     await websocket.send_json({
         "timestamp": datetime.utcnow().isoformat(),
