@@ -8,16 +8,33 @@ import uuid
 
 class FirestoreAuditLedger:
     def __init__(self, collection_name="clista_audit_logs"):
-        # Automatically inherits the Cloud Run service account credentials
-        self.db = firestore.Client()
-        self.collection = self.db.collection(collection_name)
+        self.collection_name = collection_name
+        self._db = None
+        self._collection = None
+
+    @property
+    def collection(self):
+        if self._collection is None:
+            try:
+                # Automatically inherits the Cloud Run service account credentials
+                self._db = firestore.Client()
+                self._collection = self._db.collection(self.collection_name)
+            except Exception as e:
+                print(f"[AUDIT LEDGER] Warning: Could not initialize Firestore: {e}")
+                return None
+        return self._collection
 
     def record_execution(self, prompt: str, final_decision: str, arms_data: list, metadata: dict):
         """
         Commits the complete, unmolted execution record to the audit trail.
         """
         record_id = str(uuid.uuid4())
-        doc_ref = self.collection.document(record_id)
+        col = self.collection
+        if col is None:
+            print(f"[AUDIT LEDGER] Warning: Firestore collection is not available. Skipping audit log for {record_id}.")
+            return record_id
+            
+        doc_ref = col.document(record_id)
         
         payload = {
             "record_id": record_id,

@@ -115,8 +115,8 @@ class MantleOrchestrator:
                 # Archiving to Hive Mind
                 crystallize_to_memory(prompt, final_decision, avg_confidence)
                 
-                # CI/CD Webhook execution
-                trigger_deployment_webhook(prompt, final_decision, avg_confidence)
+                # MANUAL APPROVAL REQUIRED for CI/CD webhook. Autonomous deploy is disabled.
+                # trigger_deployment_webhook(prompt, final_decision, avg_confidence)
                 
                 return final_decision
             return "Consensus reached but no active arms available."
@@ -133,16 +133,36 @@ class MantleOrchestrator:
                 active_arms = [a for a in self.arms if a.moltbook.status == 'ACTIVE']
                 deadlocked_decisions = [a.moltbook.crystallized_decision for a in active_arms]
                 
-                logger.info("Spawning arbitration_arm...")
+                logger.info("Spawning apex_arbitrator (gemini-2.5-pro)...")
                 arbitration_arm = ArmState(
                     arm_id="apex_arbitrator",
                     route="mantle->arbitration",
-                    moltbook=MoltbookState(
-                        status='ACTIVE',
-                        confidence_weight=1.0,
-                        crystallized_decision=f"APEX ARBITRATION OVERRIDE: Resolving {len(deadlocked_decisions)} deadlocked options into logically superior path."
-                    )
+                    provider="gemini",
+                    model="gemini-2.5-pro"
                 )
+                arbitration_prompt = f"{prompt}\n\nOVERRIDE PREVIOUS DEADLOCK. Conflicting options: {deadlocked_decisions}"
+                arbitration_arm.evaluate_payload(arbitration_prompt, enable_tools=False)
+                
+                # Dynamic Fallback Mechanism
+                if arbitration_arm.moltbook.status == 'SEAL':
+                    logger.warning(f"Apex Arbitrator (Gemini) failed. Falling back to Anthropic...")
+                    arbitration_arm = ArmState(
+                        arm_id="apex_arbitrator_fallback",
+                        route="mantle->arbitration",
+                        provider="anthropic",
+                        model="claude-3-5-sonnet-20241022"
+                    )
+                    arbitration_arm.evaluate_payload(arbitration_prompt, enable_tools=False)
+                    
+                    if arbitration_arm.moltbook.status == 'SEAL':
+                        logger.warning(f"Fallback Arbitrator (Anthropic) failed. Falling back to OpenAI...")
+                        arbitration_arm = ArmState(
+                            arm_id="apex_arbitrator_final_fallback",
+                            route="mantle->arbitration",
+                            provider="openai",
+                            model="o3-mini"
+                        )
+                        arbitration_arm.evaluate_payload(arbitration_prompt, enable_tools=False)
                 
                 # V3 DUAL-TRACK MEMORY: Compile pre-molt audit record including the deadlock override
                 arms_data = [{
@@ -174,7 +194,7 @@ class MantleOrchestrator:
                 self.molt_state()
                 crystallize_to_memory(prompt, final_decision, 1.0)
                 
-                # CI/CD Webhook execution
-                trigger_deployment_webhook(prompt, final_decision, 1.0)
+                # MANUAL APPROVAL REQUIRED for CI/CD webhook. Autonomous deploy is disabled.
+                # trigger_deployment_webhook(prompt, final_decision, 1.0)
                 
                 return final_decision
