@@ -4,12 +4,12 @@ Exposes the Mantle Orchestrator via a live WebSocket connection.
 Streams real-time telemetry (budget, node status, coherence) to the client.
 """
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Header, HTTPException, Depends
 from fastapi.staticfiles import StaticFiles
 import asyncio
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 app = FastAPI(title="ClisTa Octopus Swarm API", version="1.0.0")
 
@@ -18,13 +18,18 @@ from google.cloud import firestore
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "https://clista-ui.com"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.get("/api/audit/logs")
+def verify_token(authorization: str = Header(None)):
+    expected_token = os.getenv("CLISTA_AUTH_TOKEN", "Bearer SUPER_SECRET_TOKEN")
+    if authorization != expected_token:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+@app.get("/api/audit/logs", dependencies=[Depends(verify_token)])
 def get_audit_logs():
     """
     Fetches the immutable execution history from Firestore.
@@ -69,7 +74,7 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
             avg_coh = sum(a.moltbook.confidence_weight for a in orchestrator.arms if a.moltbook.status == 'ACTIVE') / active
             
         return {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "type": event_type,
             "budget": orchestrator.budget.get_remaining(),
             "coherence": avg_coh,
@@ -93,7 +98,7 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
         await websocket.send_json(build_payload("MOLT", "Shedding ephemeral scratchpads."))
         await asyncio.sleep(1)
         await websocket.send_json({
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "type": "FINAL_OUTPUT",
             "budget": budget.get_remaining(),
             "coherence": 1.0,
@@ -105,9 +110,11 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
     await websocket.send_json(build_payload("INFO", "No exact Hive Mind match. Initiating live swarm computation..."))
     await asyncio.sleep(1)
     
-    budget.consume(15.0)
+    if not budget.consume(15.0):
+        await websocket.send_json(build_payload("ERROR", "Insufficient metabolic budget. Aborting execution."))
+        return
     
-    logic_arm = ArmState(arm_id="logic", provider="anthropic", model="claude-3-7-sonnet")
+    logic_arm = ArmState(arm_id="logic", provider="anthropic", model="claude-3-5-sonnet-20241022")
     creative_arm = ArmState(arm_id="creative", provider="openai", model="o3-mini")
     
     orchestrator.arms.append(logic_arm)
@@ -165,11 +172,11 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
     # Real Deadlock Checking
     status = orchestrator.evaluate_resonant_coherence()
     
-    if status == "Consensus reached.":
+    if status == 'CONSENSUS':
         await websocket.send_json(build_payload("CONSENSUS", f"Natural consensus achieved without arbitration!"))
         await asyncio.sleep(1)
-        final_decision = logic_arm.moltbook.crystallized_decision
-        
+        active_arms = [a for a in orchestrator.arms if a.moltbook.status == 'ACTIVE']
+        final_decision = next((a.moltbook.crystallized_decision for a in active_arms if a.moltbook.crystallized_decision), "Consensus reached without specific output.")
         arms_data = [{
             "arm_id": arm.arm_id,
             "status": arm.moltbook.status,
@@ -202,7 +209,7 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
         await websocket.send_json(build_payload("ARBITRATION", "[apex] GAVEL DROP. Forcing consensus."))
         await asyncio.sleep(1)
         
-        final_decision = arbitration_arm.moltbook.crystallized_decision
+        final_decision = arbitration_arm.moltbook.crystallized_decision or "Apex Arbitration reached without specific output."
         
         arms_data.append({
             "arm_id": arbitration_arm.arm_id,
@@ -228,7 +235,7 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
     await asyncio.to_thread(crystallize_to_memory, prompt, final_decision, 1.0)
     
     await websocket.send_json({
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "type": "FINAL_OUTPUT",
         "budget": budget.get_remaining(),
         "coherence": 1.0,
@@ -238,10 +245,14 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
 
 
 @app.websocket("/ws/octopus")
-async def octopus_swarm_endpoint(websocket: WebSocket):
+async def octopus_swarm_endpoint(websocket: WebSocket, token: str = None):
     """
     The main WebSocket endpoint for clients to connect to the Swarm.
     """
+    expected_token = os.getenv("CLISTA_AUTH_TOKEN", "Bearer SUPER_SECRET_TOKEN").replace("Bearer ", "")
+    if token != expected_token:
+        await websocket.close(code=1008, reason="Unauthorized")
+        return
     await websocket.accept()
     print("Client connected to Swarm Gateway.")
     
