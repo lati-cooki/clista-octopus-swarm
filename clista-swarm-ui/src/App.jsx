@@ -1,5 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 
+// Truncate a long identifier for compact display, keeping it fully visible via title/tooltip.
+const truncateId = (id, len = 14) => {
+  if (!id) return '—';
+  const str = String(id);
+  return str.length > len ? `${str.slice(0, len)}…` : str;
+};
+
+// Render only the date portion of an ISO timestamp (or any parseable date string).
+const formatDatePart = (dateStr) => {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return String(dateStr).split('T')[0] || String(dateStr);
+  return d.toLocaleDateString();
+};
+
 function App() {
   const [activeTab, setActiveTab] = useState('swarm'); // 'swarm' or 'audit'
 
@@ -12,7 +27,9 @@ function App() {
   const [prompt, setPrompt] = useState('');
   const [isFlashing, setIsFlashing] = useState(false);
   const [isArbitrating, setIsArbitrating] = useState(false);
+  const [isRecalling, setIsRecalling] = useState(false);
   const [finalDecision, setFinalDecision] = useState(null);
+  const [finalPrecedent, setFinalPrecedent] = useState(null);
   const ws = useRef(null);
   const logsEndRef = useRef(null);
 
@@ -46,7 +63,8 @@ function App() {
           if (data.active_arms !== undefined) setActiveArms(data.active_arms);
           if (data.type === 'SEAL') { setIsFlashing(true); setTimeout(() => setIsFlashing(false), 2000); }
           if (data.type === 'ARBITRATION') { setIsArbitrating(true); setTimeout(() => setIsArbitrating(false), 3000); }
-          if (data.type === 'FINAL_OUTPUT') { setFinalDecision(data.decision); setStatus('COMPLETED'); }
+          if (data.type === 'RECALL') { setIsRecalling(true); setTimeout(() => setIsRecalling(false), 2500); }
+          if (data.type === 'FINAL_OUTPUT') { setFinalDecision(data.decision); setFinalPrecedent(data.precedent || null); setStatus('COMPLETED'); }
           else { setStatus('PROCESSING'); }
         }
       } catch (err) { console.error("Failed to parse websocket message", err); }
@@ -65,7 +83,7 @@ function App() {
 
   const handleExecute = () => {
     if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-      setLogs([]); setFinalDecision(null); setBudget(100.0); setCoherence(0.0); setActiveArms(0);
+      setLogs([]); setFinalDecision(null); setFinalPrecedent(null); setBudget(100.0); setCoherence(0.0); setActiveArms(0);
       ws.current.send(JSON.stringify({ prompt }));
     } else {
       setLogs(prev => [...prev, { type: 'ERROR', message: 'WebSocket not connected. Is the gateway running?' }]);
@@ -172,7 +190,7 @@ function App() {
                 </button>
               </div>
 
-              <div className={`glass-panel p-6 transition-all duration-300 ${isFlashing ? 'seal-alert' : ''} ${isArbitrating ? 'arbitration-alert' : ''}`}>
+              <div className={`glass-panel p-6 transition-all duration-300 ${isFlashing ? 'seal-alert' : ''} ${isArbitrating ? 'arbitration-alert' : ''} ${isRecalling ? 'recall-alert' : ''}`}>
                 <h2 className="text-lg font-semibold mb-6 flex justify-between items-center">
                   <span>Telemetry</span>
                   <div className="flex space-x-2">
@@ -181,6 +199,9 @@ function App() {
                     )}
                     {isArbitrating && (
                       <span className="text-xs font-bold bg-amber-500 text-slate-900 px-2 py-1 rounded animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.6)]">ARBITRATION</span>
+                    )}
+                    {isRecalling && (
+                      <span className="text-xs font-bold bg-sky-400 text-slate-900 px-2 py-1 rounded animate-pulse shadow-[0_0_15px_rgba(56,189,248,0.7)]">CACHE RECALL</span>
                     )}
                   </div>
                 </h2>
@@ -208,9 +229,32 @@ function App() {
             {/* Swarm Right Column */}
             <div className="lg:col-span-2 flex flex-col space-y-6">
               {finalDecision && (
-                <div className="glass-panel p-6 border-emerald-500/30 bg-emerald-950/20 shadow-[0_0_30px_rgba(16,185,129,0.1)] animate-fade-in">
-                  <h2 className="text-emerald-400 text-sm font-bold tracking-wider mb-2">CRYSTALLIZED DECISION (MOLT COMPLETE)</h2>
-                  <p className="text-slate-200 text-lg leading-relaxed pl-6 border-l-2 border-emerald-500/50">{finalDecision}</p>
+                <div className={`glass-panel p-6 animate-fade-in ${finalPrecedent ? 'border-sky-500/30 bg-sky-950/20 shadow-[0_0_30px_rgba(56,189,248,0.12)]' : 'border-emerald-500/30 bg-emerald-950/20 shadow-[0_0_30px_rgba(16,185,129,0.1)]'}`}>
+                  <h2 className={`text-sm font-bold tracking-wider mb-2 ${finalPrecedent ? 'text-sky-400' : 'text-emerald-400'}`}>
+                    {finalPrecedent ? 'RECALLED DECISION (CACHE HIT)' : 'CRYSTALLIZED DECISION (MOLT COMPLETE)'}
+                  </h2>
+                  <p className={`text-slate-200 text-lg leading-relaxed pl-6 border-l-2 ${finalPrecedent ? 'border-sky-500/50' : 'border-emerald-500/50'}`}>{finalDecision}</p>
+                  {finalPrecedent && (
+                    <div className="mt-4 pt-4 border-t border-sky-500/20 flex flex-wrap items-center gap-2">
+                      <span className="px-2 py-1 rounded text-[10px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/40 tracking-wider">
+                        PRECEDENT
+                      </span>
+                      <span className="text-xs text-slate-400 font-mono" title={finalPrecedent.precedent_id}>
+                        ID: <span className="text-sky-300">{truncateId(finalPrecedent.precedent_id)}</span>
+                      </span>
+                      {finalPrecedent.age_days !== undefined && (
+                        <span className="text-xs text-slate-400">{finalPrecedent.age_days}d old</span>
+                      )}
+                      <span className="text-xs text-slate-400">
+                        Decided {formatDatePart(finalPrecedent.original_decision_date)}
+                      </span>
+                      {finalPrecedent.stale && (
+                        <span className="px-2 py-1 rounded text-[10px] font-bold bg-red-500/20 text-red-300 border border-red-500/40 animate-pulse">
+                          STALE
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
               <div className="glass-panel flex-grow flex flex-col overflow-hidden h-[500px]">
@@ -227,8 +271,8 @@ function App() {
                     logs.map((log, i) => (
                       <div key={i} className="flex items-start">
                         <span className="text-slate-600 mr-3 text-xs mt-1 w-20 shrink-0">{new Date(log.timestamp || Date.now()).toLocaleTimeString()}</span>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0 mr-3 mt-0.5 w-24 text-center ${log.type === 'SEAL' ? 'bg-red-500/20 text-red-400' : log.type === 'WARNING' ? 'bg-yellow-500/20 text-yellow-400' : log.type === 'ERROR' ? 'bg-red-500/30 text-red-300' : log.type === 'CONSENSUS' ? 'bg-emerald-500/20 text-emerald-400' : log.type === 'ARBITRATION' ? 'bg-amber-500 text-slate-900' : log.type === 'BLASTEMA' ? 'bg-blue-500/20 text-blue-400' : log.type === 'FINAL_OUTPUT' ? 'bg-emerald-600/30 text-emerald-300' : 'bg-slate-700/50 text-slate-300'}`}>{log.type}</span>
-                        <span className={`break-words flex-grow ${log.type === 'SEAL' || log.type === 'ERROR' ? 'text-red-300' : log.type === 'CONSENSUS' || log.type === 'FINAL_OUTPUT' ? 'text-emerald-300' : log.type === 'ARBITRATION' ? 'text-amber-400 font-bold' : 'text-slate-300'}`}>{log.message}</span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0 mr-3 mt-0.5 w-24 text-center ${log.type === 'SEAL' ? 'bg-red-500/20 text-red-400' : log.type === 'WARNING' ? 'bg-yellow-500/20 text-yellow-400' : log.type === 'ERROR' ? 'bg-red-500/30 text-red-300' : log.type === 'CONSENSUS' ? 'bg-emerald-500/20 text-emerald-400' : log.type === 'ARBITRATION' ? 'bg-amber-500 text-slate-900' : log.type === 'RECALL' ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40' : log.type === 'BLASTEMA' ? 'bg-blue-500/20 text-blue-400' : log.type === 'FINAL_OUTPUT' ? 'bg-emerald-600/30 text-emerald-300' : 'bg-slate-700/50 text-slate-300'}`}>{log.type}</span>
+                        <span className={`break-words flex-grow ${log.type === 'SEAL' || log.type === 'ERROR' ? 'text-red-300' : log.type === 'CONSENSUS' || log.type === 'FINAL_OUTPUT' ? 'text-emerald-300' : log.type === 'ARBITRATION' ? 'text-amber-400 font-bold' : log.type === 'RECALL' ? 'text-sky-300 font-semibold' : 'text-slate-300'}`}>{log.message}</span>
                       </div>
                     ))
                   )}
