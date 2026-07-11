@@ -8,7 +8,13 @@ All OpenAI calls are mocked. No network I/O occurs in this test file.
 import re
 from unittest.mock import Mock, patch
 
-from context_key import DecisionContext, context_hash, extract_decision_context
+from context_key import (
+    DecisionContext,
+    DecisionContextExtraction,
+    ExtractedMetric,
+    context_hash,
+    extract_decision_context,
+)
 
 
 def make_ctx(**overrides) -> DecisionContext:
@@ -22,6 +28,36 @@ def make_ctx(**overrides) -> DecisionContext:
     )
     defaults.update(overrides)
     return DecisionContext(**defaults)
+
+
+def make_wire_ctx(**overrides) -> DecisionContextExtraction:
+    """Build the wire-model object the OpenAI parse call actually returns."""
+    defaults = dict(
+        schema_id="mrm_revalidation_v1",
+        entity="Regional Bank Co",
+        metrics=[
+            ExtractedMetric(name="psi", value=0.08),
+            ExtractedMetric(name="auc", value=0.82),
+        ],
+        months_since_validation=8.0,
+        validation_cycle_months=12.0,
+        exogenous_events=[],
+    )
+    defaults.update(overrides)
+    return DecisionContextExtraction(**defaults)
+
+
+def mock_parse_client(parsed) -> Mock:
+    """Mock OpenAI client whose parse call returns a response with one parsed message."""
+    mock_message = Mock()
+    mock_message.parsed = parsed
+    mock_choice = Mock()
+    mock_choice.message = mock_message
+    mock_response = Mock()
+    mock_response.choices = [mock_choice]
+    mock_client = Mock()
+    mock_client.beta.chat.completions.parse.return_value = mock_response
+    return mock_client
 
 
 class TestContextHashCanonicalization:
@@ -122,21 +158,58 @@ class TestContextHashCanonicalization:
 
 class TestExtractDecisionContext:
     def test_returns_parsed_context_on_success(self):
-        expected = make_ctx()
-        mock_message = Mock()
-        mock_message.parsed = expected
-        mock_choice = Mock()
-        mock_choice.message = mock_message
-        mock_response = Mock()
-        mock_response.choices = [mock_choice]
-
-        mock_client = Mock()
-        mock_client.beta.chat.completions.parse.return_value = mock_response
+        # The mock returns the WIRE model (matching real API behavior);
+        # extract_decision_context must convert it to a DecisionContext.
+        mock_client = mock_parse_client(make_wire_ctx())
 
         with patch("context_key.openai.OpenAI", return_value=mock_client):
             result = extract_decision_context("Some MRM prompt about revalidation.")
 
-        assert result == expected
+        assert result == make_ctx()
+        # The strict-compatible wire model — not DecisionContext — must be sent
+        # as response_format (DecisionContext's dict field is rejected by the API).
+        call_kwargs = mock_client.beta.chat.completions.parse.call_args.kwargs
+        assert call_kwargs["response_format"] is DecisionContextExtraction
+
+    def test_extraction_wire_model_is_strict_schema_compatible(self):
+        # Encodes the exact OpenAI strict structured-output constraint that bit
+        # us in production: every object node must have additionalProperties
+        # False and a required array covering every property. A free-form
+        # dict[str, float] field violates this — the API rejects it with a 400
+        # (to_strict_json_schema itself does NOT raise; the rejection is
+        # server-side, hence asserting the schema SHAPE here).
+        from openai.lib._pydantic import to_strict_json_schema
+
+        schema = to_strict_json_schema(DecisionContextExtraction)
+
+        def walk(node):
+            if isinstance(node, dict):
+                if node.get("type") == "object":
+                    assert node.get("additionalProperties") is False, node
+                    props = node.get("properties", {})
+                    assert sorted(node.get("required", [])) == sorted(props.keys()), node
+                for value in node.values():
+                    walk(value)
+            elif isinstance(node, list):
+                for value in node:
+                    walk(value)
+
+        walk(schema)
+
+    def test_extraction_converts_wire_metrics_to_dict(self):
+        wire = make_wire_ctx(
+            metrics=[
+                ExtractedMetric(name="PSI", value=0.08),
+                ExtractedMetric(name="auc", value=0.82),
+            ]
+        )
+        mock_client = mock_parse_client(wire)
+
+        with patch("context_key.openai.OpenAI", return_value=mock_client):
+            result = extract_decision_context("Some MRM prompt about revalidation.")
+
+        assert result is not None
+        assert result.metrics == {"psi": 0.08, "auc": 0.82}
 
     def test_returns_none_when_openai_call_raises(self):
         mock_client = Mock()
