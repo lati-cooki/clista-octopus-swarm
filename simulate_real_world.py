@@ -3,7 +3,10 @@ from arm_state import ArmState, MoltbookState
 from budget import MetabolicBudget
 from mantle import MantleOrchestrator
 from seal import seal_arm
-from moltbook_archive import query_hive_mind
+# NOTE: this demo script hits live services (Firestore/OpenAI) and is not
+# executed by the test suite. Updated minimally to keep imports resolvable
+# after the context-hash cache rework -- see moltbook_archive.py.
+from moltbook_archive import query_hive_mind_by_context
 import mantle
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -74,8 +77,13 @@ new_arm = ArmState(
     route="mantle->creative",
     moltbook=MoltbookState(status='ACTIVE', confidence_weight=1.0)
 )
-recall_result = query_hive_mind(query=prompt, arm_state=new_arm)
-new_arm.moltbook.crystallized_decision = recall_result
+# TODO: this demo predates context-hash extraction; it no longer has a real
+# DecisionContext to hash, so this recall lookup is a placeholder that will
+# simply miss (None) rather than crash the script.
+recall_precedent = query_hive_mind_by_context(context_hash=None)
+new_arm.moltbook.crystallized_decision = (
+    recall_precedent["decision"] if recall_precedent else ""
+)
 
 orchestrator.arms = [new_arm]
 orchestrator.negotiation_passes = 0 # reset

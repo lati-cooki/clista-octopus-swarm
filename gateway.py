@@ -57,7 +57,7 @@ from mantle import MantleOrchestrator
 from budget import MetabolicBudget
 from arm_state import ArmState, MoltbookState
 from seal import seal_arm
-from moltbook_archive import query_hive_mind
+from moltbook_archive import query_hive_mind_by_context, record_recall_event
 
 async def execute_swarm(websocket: WebSocket, prompt: str):
     """
@@ -90,7 +90,8 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
     await asyncio.sleep(1.5)
     
     recall_arm = ArmState(arm_id="hive_mind_probe", route="mantle->memory", moltbook=MoltbookState(status='ACTIVE', confidence_weight=1.0))
-    cached_decision = await asyncio.to_thread(query_hive_mind, query=prompt, arm_state=recall_arm)
+    # TODO(Task 5): wire context extraction + query_hive_mind_by_context/record_recall_event here.
+    cached_decision = ""
     
     if cached_decision:
         await websocket.send_json(build_payload("CONSENSUS", "Hive Mind HIT! Recovered past consensus. 0.0 Compute Cost."))
