@@ -349,7 +349,12 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
         await websocket.send_json(build_payload("CONSENSUS", f"Natural consensus achieved without arbitration!"))
         await asyncio.sleep(1)
         active_arms = [a for a in orchestrator.arms if a.moltbook.status == 'ACTIVE']
-        final_decision = next((a.moltbook.crystallized_decision for a in active_arms if a.moltbook.crystallized_decision), "Consensus reached without specific output.")
+        # Track whether an arm actually produced a decision. A fallback
+        # sentinel may be served to the client, but only a REAL decision may
+        # be archived as citable precedent (see crystallize gate below).
+        real_decision = next((a.moltbook.crystallized_decision for a in active_arms if a.moltbook.crystallized_decision), None)
+        decision_is_real = real_decision is not None
+        final_decision = real_decision or "Consensus reached without specific output."
         arms_data = [{
             "arm_id": arm.arm_id,
             "status": arm.moltbook.status,
@@ -382,7 +387,12 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
         await websocket.send_json(build_payload("ARBITRATION", "[apex] GAVEL DROP. Forcing consensus."))
         await asyncio.sleep(1)
         
-        final_decision = arbitration_arm.moltbook.crystallized_decision or "Apex Arbitration reached without specific output."
+        # Same real-decision tracking as the consensus branch: a transient
+        # arbitrator failure yields the sentinel, which must never be
+        # archived as citable precedent.
+        real_decision = arbitration_arm.moltbook.crystallized_decision or None
+        decision_is_real = real_decision is not None
+        final_decision = real_decision or "Apex Arbitration reached without specific output."
         
         arms_data.append({
             "arm_id": arbitration_arm.arm_id,
@@ -400,18 +410,30 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
     )
 
     orchestrator.molt_state()
-    await websocket.send_json(build_payload("MOLT", "Shedding ephemeral scratchpads. Crystallizing to Hive Mind."))
-    await asyncio.sleep(1)
 
-    await asyncio.to_thread(
-        crystallize_to_memory,
-        prompt,
-        final_decision,
-        1.0,
-        context_hash=h if not cache_bypassed else None,
-        decision_context=ctx.model_dump() if ctx else None,
-        execution_id=execution_id,
-    )
+    if decision_is_real:
+        await websocket.send_json(build_payload("MOLT", "Shedding ephemeral scratchpads. Crystallizing to Hive Mind."))
+        await asyncio.sleep(1)
+
+        await asyncio.to_thread(
+            crystallize_to_memory,
+            prompt,
+            final_decision,
+            1.0,
+            context_hash=h if not cache_bypassed else None,
+            decision_context=ctx.model_dump() if ctx else None,
+            execution_id=execution_id,
+        )
+    else:
+        # A fallback sentinel ("... without specific output.") is not a
+        # decision. Serving it to THIS client is honest degradation; caching
+        # it would let a later materially-identical query cite a no-answer
+        # as precedent. Audit above still records the run: audit is history,
+        # cache is precedent.
+        await websocket.send_json(build_payload(
+            "INFO", "No crystallized decision produced — not archiving as precedent."
+        ))
+        await asyncio.sleep(0.5)
     
     await websocket.send_json({
         "timestamp": datetime.now(timezone.utc).isoformat(),

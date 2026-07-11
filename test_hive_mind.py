@@ -537,6 +537,49 @@ class TestGatewayRecallPath:
         assert "CONSENSUS" not in types
         mock_crystallize.assert_not_called()
 
+    def test_fallback_sentinel_decision_is_not_archived(self):
+        """When no arm produces a crystallized_decision, the fresh path
+        serves a fallback sentinel ("Consensus reached without specific
+        output.") -- that sentinel must NEVER be crystallized to the Hive
+        Mind as a keyed precedent (a no-decision must never become citable
+        precedent). The audit record must still be written: audit is
+        history, cache is precedent.
+        """
+        ws = FakeWebSocket()
+        ctx = MagicMock(name="ctx")
+        ctx.model_dump.return_value = {"schema_id": "mrm_revalidation_v1"}
+
+        def no_decision_eval(self, user_prompt, enable_tools=False):
+            # ACTIVE with high confidence so natural consensus resolves
+            # without the arbitrator, but NO crystallized decision produced
+            # (e.g. transient LLM failure returning an empty payload).
+            self.moltbook.status = "ACTIVE"
+            self.moltbook.confidence_weight = 0.9
+            self.moltbook.crystallized_decision = None
+            return self.moltbook
+
+        with patch.object(ArmState, "evaluate_payload", no_decision_eval), \
+             patch("gateway.extract_decision_context", return_value=ctx), \
+             patch("gateway.context_hash", return_value="hash-no-decision"), \
+             patch("gateway.query_hive_mind_by_context", return_value=None), \
+             patch("gateway.crystallize_to_memory") as mock_crystallize, \
+             patch("gateway.commit_audit_record", return_value="exec-no-decision") as mock_audit, \
+             patch("gateway.reground_rationale"), \
+             patch("gateway.record_recall_event"):
+            asyncio.run(gateway.execute_swarm(ws, "a prompt whose arms all fail to decide"))
+
+        final_outputs = [e for e in ws.sent if e["type"] == "FINAL_OUTPUT"]
+        assert len(final_outputs) == 1
+        assert "Consensus reached without specific output." in final_outputs[0]["decision"]
+
+        # The sentinel is served but never archived as citable precedent.
+        mock_crystallize.assert_not_called()
+        # Audit still records the run (history != precedent).
+        mock_audit.assert_called_once()
+
+        info_messages = [e["message"] for e in ws.sent if e["type"] == "INFO"]
+        assert any("not archiving as precedent" in m for m in info_messages)
+
     def test_recall_reground_runs_off_event_loop(self):
         """reground_rationale is a blocking OpenAI network call; the recall
         path must run it via asyncio.to_thread, never directly on the event
