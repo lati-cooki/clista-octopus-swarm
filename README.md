@@ -49,9 +49,12 @@ Once deployed, navigate to your Cloud Run service in the GCP Console and inject 
 - `ANTHROPIC_API_KEY`
 - `GEMINI_API_KEY`
 
+### 3. Local Testing
+For local test runs, install `requirements-dev.txt` (adds `pytest` and `websockets`) on top of `requirements.txt`.
+
 ## 🛡️ Example Use Case: Model Risk Management (MRM)
 The strict Maker-Checker nature of the Swarm makes it ideal for enterprise compliance tasks.
-- Assign `logic_arm` (Claude 3.5 Sonnet) as the Model Validator.
+- Assign `logic_arm` (Claude Sonnet 4.5) as the Model Validator.
 - Assign `creative_arm` (GPT-4o) as the Model Developer.
 - Allow them to friction-test quantitative code via the `execute_secure_sandbox` tool.
 - Rely on the Moltbook Archive to generate an immutable, bloat-free audit trail in Firestore for compliance review.
