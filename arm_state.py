@@ -145,14 +145,13 @@ class ArmState:
             messages=[{"role": "user", "content": user_prompt}]
         )
         
-        text = response.content[0].text.strip()
-        if text.startswith("```json"):
-            text = text[7:]
-        elif text.startswith("```"):
-            text = text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-        text = text.strip()
+        import re
+        text = response.content[0].text
+        match = re.search(r'```(?:json)?(.*?)```', text, re.DOTALL | re.IGNORECASE)
+        if match:
+            text = match.group(1).strip()
+        else:
+            text = text.strip()
         
         parsed_result = MoltbookState.model_validate_json(text)
         self._sync_state(parsed_result)
