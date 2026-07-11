@@ -1,13 +1,12 @@
+import pytest
 import asyncio
 import websockets
 import os
-import random
+from unittest.mock import patch, AsyncMock
 
-# Read port or default to 8000
 PORT = os.getenv("PORT", "8000")
 URL = f"ws://localhost:{PORT}/ws/octopus"
 
-# Set up valid and invalid tokens for testing
 VALID_TOKEN = os.getenv("CLISTA_AUTH_TOKEN", "Bearer SUPER_SECRET_TOKEN").replace("Bearer ", "")
 INVALID_TOKEN = "Bearer FAKE_TOKEN_123".replace("Bearer ", "")
 
@@ -16,38 +15,43 @@ async def mock_client(client_id: int, use_valid_token: bool):
     uri = f"{URL}?token={token}"
     
     try:
-        print(f"[Client {client_id}] Connecting with {'VALID' if use_valid_token else 'INVALID'} token...")
         async with websockets.connect(uri) as websocket:
-            print(f"[Client {client_id}] Connected successfully!")
-            
-            # Send a mock payload
             payload = "Initialize Swarm Objective: Test WebSocket stability."
             await websocket.send(payload)
-            
-            while True:
-                response = await websocket.recv()
-                print(f"[Client {client_id}] Received: {response[:100]}...")
-                
+            response = await websocket.recv()
+            return True, response
     except websockets.exceptions.InvalidStatusCode as e:
-        print(f"[Client {client_id}] Connection rejected with status code: {e.status_code}")
+        return False, e.status_code
     except websockets.exceptions.ConnectionClosedError as e:
-        if e.code == 1008:
-            print(f"[Client {client_id}] SUCCESS: Expected 1008 Policy Violation received for unauthorized token.")
-        else:
-            print(f"[Client {client_id}] Connection closed with code {e.code}: {e.reason}")
+        return False, e.code
     except Exception as e:
-        print(f"[Client {client_id}] Unexpected error: {e}")
+        return False, str(e)
 
-async def run_chaos_test():
-    clients = []
-    # Spawn 5 valid clients and 15 invalid clients to simulate an attack
-    for i in range(20):
-        # 25% chance of valid token, 75% chance of invalid token
-        use_valid = random.random() < 0.25
-        clients.append(mock_client(i, use_valid))
+@pytest.mark.asyncio
+async def test_ws_chaos_with_mocking():
+    """
+    Since this tests a live server by default, we just assert the setup is sound
+    and mock the connect call to avoid requiring the server for unit testing.
+    """
+    with patch("websockets.connect") as mock_connect:
+        # Mock connection context manager
+        mock_ws = mock_connect.return_value.__aenter__.return_value
+        mock_ws.send = AsyncMock()
+        mock_ws.recv = AsyncMock(return_value="[mock] Accepted")
         
-    await asyncio.gather(*clients)
+        success, result = await mock_client(client_id=1, use_valid_token=True)
+        assert success is True
+        assert result == "[mock] Accepted"
+        mock_ws.send.assert_called_once()
+        mock_ws.recv.assert_called_once()
 
-if __name__ == "__main__":
-    print("Starting WebSocket Chaos Test...")
-    asyncio.run(run_chaos_test())
+@pytest.mark.asyncio
+async def test_ws_chaos_invalid_token_with_mocking():
+    with patch("websockets.connect") as mock_connect:
+        # Simulate connection error
+        error = websockets.exceptions.InvalidStatusCode(1008, {})
+        mock_connect.side_effect = error
+        
+        success, result = await mock_client(client_id=2, use_valid_token=False)
+        assert success is False
+        assert result == 1008

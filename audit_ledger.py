@@ -8,14 +8,6 @@ import uuid
 
 class FirestoreAuditLedger:
     def __init__(self, collection_name="clista_audit_logs"):
-        # Automatically inherits the Cloud Run service account credentials
-        try:
-            self.db = firestore.Client()
-            self.collection = self.db.collection(collection_name)
-        except Exception as e:
-            print(f"Failed to initialize Firestore: {e}")
-            self.db = None
-            self.collection = None
         self.collection_name = collection_name
         self._db = None
         self._collection = None
@@ -46,7 +38,7 @@ class FirestoreAuditLedger:
         
         payload = {
             "record_id": record_id,
-            "timestamp": firestore.SERVER_TIMESTAMP if self.db else "MOCKED_TIMESTAMP",
+            "timestamp": firestore.SERVER_TIMESTAMP if self._db else "MOCKED_TIMESTAMP",
             "prompt": prompt,
             "final_decision": final_decision,
             "arms_execution_history": arms_data, # Contains raw scratchpads and tool outputs
