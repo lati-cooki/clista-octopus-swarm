@@ -209,3 +209,50 @@ input itself.
    arm is injected by `gateway.py`'s `inject_regrow_state` demo scaffolding with a
    hardcoded decision and no scratchpad, unlike the other two arms in the same execution,
    which both show substantial, distinct chain-of-thought traces.
+
+## Post-verification addendum (2026-07-11)
+
+The verification gate was re-run against the deployed service (Cloud Run revision
+`clista-octopus-swarm-00038`, 2026-07-11 ~08:09–08:17 UTC) with the remedy in place. The
+matrix from the plan's Global Constraints **passed**:
+
+- **Phase 1** fresh-computed and archived a keyed precedent
+  (`ff48b95a-2be9-466d-bc95-fe25b71860bf`).
+- **Phase 2** (recession variant) was a cache **MISS**: fresh compute with nonzero budget
+  spend (75.0 remaining of 100), and the recommendation flipped to "Trigger an immediate,
+  out-of-cycle model revalidation" — the answer the prior design failed to produce.
+- **Phase 3** (webbank / 2-months variant) was a **RECALL** hit: it served the cited
+  conclusion with rationale re-grounded in the current query's facts ("validated 2 months
+  ago"), full precedent metadata (precedent id, execution id, context hash, age, original
+  decision date, stale flag), zero swarm spend (budget 100.0), and no false claims — no
+  "8 months," no "4 months."
+
+Full event streams are committed as `docs/verification/phase{1,2,3}-events-2026-07-11.json`.
+
+Firestore end-state confirms provenance separation live: two `CRYSTALLIZATION` entries
+(Phase 1 hash `40a19680…`, Phase 2 hash `56d04763…`), two `RECALL` entries referencing
+`ff48b95a`, and zero re-archives.
+
+The gate itself surfaced four additional live defects, each fixed with a regression test
+before the matrix passed:
+
+1. OpenAI strict structured-output rejected the extraction schema's dict-typed `metrics`
+   field, so extraction always failed open in production (every run bypassed the cache) —
+   fixed with a strict-compatible wire model (`814d0e8`).
+2. Default-temperature extraction was nondeterministic: one trial dropped the AUC metric,
+   producing a false miss — fixed with temperature 0 and a fixed seed (`74ca1b5`).
+3. The gateway archived its own no-output fallback sentinel ("Apex Arbitration reached
+   without specific output.") as a keyed precedent when the arbitration arm transiently
+   failed — fixed so non-decisions are never archived (`0a6601b`). The legacy store already
+   contained the same class of garbage ("Consensus reached without specific output.", doc
+   `3250d5d6`) from before this work.
+4. The first-paragraph conclusion heuristic served entire JSON-blob decisions verbatim on
+   recall — including the original justification's "8 months"/"4 months" facts, i.e. the
+   rationale-transplant defect resurfacing through a different seam — fixed with JSON-aware
+   holding extraction (`85c9350`).
+
+One quarantine action: hive-mind doc `9097a9a4` (the sentinel precedent written by defect 3
+during the gate run itself) was verified and deleted.
+
+Throughout the gate, fail-open behaved as designed: every extraction failure produced a
+fresh compute, never a stale recall.
