@@ -69,21 +69,39 @@ class TestContextHashCanonicalization:
         assert context_hash(ctx_a) == context_hash(ctx_b)
 
     def test_exogenous_events_casing_and_whitespace_normalized(self):
+        # Casing, leading/trailing whitespace, AND internal whitespace collapse
+        # must all normalize to the same hash across multi-event lists.
         ctx_a = make_ctx(exogenous_events=["Fed Rate Cut 150bps", "Regional Recession"])
         ctx_b = make_ctx(exogenous_events=["  fed rate cut 150bps  ", "regional   recession"])
-        # Note: internal whitespace collapsing is best-effort; leading/trailing +
-        # casing normalization must hold at minimum.
-        assert context_hash(make_ctx(exogenous_events=["Fed Rate Cut 150bps"])) == context_hash(
-            make_ctx(exogenous_events=["fed rate cut 150bps"])
-        )
-        assert context_hash(make_ctx(exogenous_events=["  fed rate cut 150bps  "])) == context_hash(
-            make_ctx(exogenous_events=["fed rate cut 150bps"])
-        )
+        ctx_canonical = make_ctx(exogenous_events=["fed rate cut 150bps", "regional recession"])
+        assert context_hash(ctx_a) == context_hash(ctx_canonical)
+        assert context_hash(ctx_b) == context_hash(ctx_canonical)
+        assert context_hash(ctx_a) == context_hash(ctx_b)
 
     def test_different_metric_values_differ(self):
         ctx_a = make_ctx(metrics={"psi": 0.08, "auc": 0.82})
         ctx_b = make_ctx(metrics={"psi": 0.09, "auc": 0.82})
         assert context_hash(ctx_a) != context_hash(ctx_b)
+
+    def test_metric_key_casing_normalized(self):
+        # Defensive: even though extraction requests lowercase metric names, an
+        # LLM emitting "PSI" must not produce a different hash than "psi".
+        ctx_upper = make_ctx(metrics={"PSI": 0.08, "AUC": 0.82})
+        ctx_lower = make_ctx(metrics={"psi": 0.08, "auc": 0.82})
+        assert context_hash(ctx_upper) == context_hash(ctx_lower)
+
+    def test_metric_key_whitespace_normalized(self):
+        ctx_padded = make_ctx(metrics={" psi ": 0.08, "auc": 0.82})
+        ctx_clean = make_ctx(metrics={"psi": 0.08, "auc": 0.82})
+        assert context_hash(ctx_padded) == context_hash(ctx_clean)
+
+    def test_months_equal_to_cycle_buckets_as_overdue(self):
+        # Boundary: elapsed == cycle length is "overdue" (>=), not within_cycle.
+        ctx_boundary = make_ctx(months_since_validation=12.0, validation_cycle_months=12.0)
+        ctx_within = make_ctx(months_since_validation=8.0, validation_cycle_months=12.0)
+        ctx_overdue = make_ctx(months_since_validation=13.0, validation_cycle_months=12.0)
+        assert context_hash(ctx_boundary) != context_hash(ctx_within)
+        assert context_hash(ctx_boundary) == context_hash(ctx_overdue)
 
     def test_hash_is_64_char_lowercase_hex(self):
         h = context_hash(make_ctx())

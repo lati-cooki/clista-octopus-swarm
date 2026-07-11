@@ -128,15 +128,19 @@ def _canonicalize_events(events: list[str]) -> list[str]:
 def context_hash(ctx: DecisionContext) -> str:
     """SHA-256 hex digest of the canonical JSON of the decision-relevant fields.
 
-    Included: schema_id, metrics (values rounded to 6 decimal places), cycle_position
-    (derived from months_since_validation vs validation_cycle_months), exogenous_events
+    Included: schema_id, metrics (keys defensively normalized — lowercased,
+    whitespace-stripped/collapsed — even though extraction requests lowercase keys;
+    values rounded to 6 decimal places), cycle_position (derived from
+    months_since_validation vs validation_cycle_months), exogenous_events
     (sorted, lowercased, whitespace-collapsed).
 
     Excluded: entity (cosmetic), raw months_since_validation, validation_cycle_months.
     """
     payload = {
         "schema_id": ctx.schema_id,
-        "metrics": {k: round(float(v), 6) for k, v in ctx.metrics.items()},
+        "metrics": {
+            " ".join(k.lower().split()): round(float(v), 6) for k, v in ctx.metrics.items()
+        },
         "cycle_position": _cycle_position(ctx.months_since_validation, ctx.validation_cycle_months),
         "exogenous_events": _canonicalize_events(ctx.exogenous_events),
     }
