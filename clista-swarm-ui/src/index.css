@@ -29,3 +29,13 @@
 .arbitration-alert {
   animation: pulse-amber 1.5s infinite;
 }
+
+@keyframes pulse-sky {
+  0% { background-color: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.35); box-shadow: 0 0 10px rgba(56, 189, 248, 0.15); }
+  50% { background-color: rgba(56, 189, 248, 0.22); border-color: rgba(56, 189, 248, 0.9); box-shadow: 0 0 24px rgba(56, 189, 248, 0.6); }
+  100% { background-color: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.35); box-shadow: 0 0 10px rgba(56, 189, 248, 0.15); }
+}
+
+.recall-alert {
+  animation: pulse-sky 1.5s infinite;
+}
