@@ -8,6 +8,11 @@ def tool(func):
     """Antigravity ADK tool decorator."""
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
+        # Allow arm_state if it's explicitly in func signature, otherwise pop it.
+        import inspect
+        sig = inspect.signature(func)
+        if 'arm_state' not in sig.parameters:
+            kwargs.pop('arm_state', None)
         return func(*args, **kwargs)
     return wrapper
 
