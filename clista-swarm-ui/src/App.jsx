@@ -77,7 +77,12 @@ function App() {
     try {
       const protocol = window.location.protocol;
       const host = window.location.port === '5173' ? 'localhost:8000' : window.location.host;
-      const res = await fetch(`${protocol}//${host}/api/audit/logs`);
+      const token = "SUPER_SECRET_TOKEN";
+      const res = await fetch(`${protocol}//${host}/api/audit/logs`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
       const json = await res.json();
       if (json.status === 'success') {
         setAuditLogs(json.data);
