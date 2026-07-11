@@ -6,3 +6,6 @@ google-cloud-firestore
 openai
 google-generativeai
 anthropic
+pytest
+pytest-mock
+pytest-asyncio
