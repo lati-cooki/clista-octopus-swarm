@@ -1,0 +1,46 @@
+{
+  "phase": "3",
+  "prompt": "Webbank's PD (probability of default) model for small-business\nlending shows a population stability index (PSI) of 0.08 on all input\nfeatures over the last quarter. Model accuracy (AUC) at last validation\nwas 0.82. The model was validated 2 months ago. Should the model risk\nteam trigger an out-of-cycle revalidation, or is annual-cycle\nrevalidation sufficient? Provide a recommendation with confidence.",
+  "events": [
+    {
+      "timestamp": "2026-07-11T08:16:33.604107+00:00",
+      "type": "SYSTEM",
+      "budget": 100.0,
+      "coherence": 0.0,
+      "active_arms": 0,
+      "message": "Initializing Mantle Orchestrator..."
+    },
+    {
+      "timestamp": "2026-07-11T08:16:34.606591+00:00",
+      "type": "INFO",
+      "budget": 100.0,
+      "coherence": 0.0,
+      "active_arms": 0,
+      "message": "Checking Hive Mind for prompt: 'Webbank's PD (probability of default) model for small-business\nlending shows a population stability index (PSI) of 0.08 on all input\nfeatures over the last quarter. Model accuracy (AUC) at last validation\nwas 0.82. The model was validated 2 months ago. Should the model risk\nteam trigger an out-of-cycle revalidation, or is annual-cycle\nrevalidation sufficient? Provide a recommendation with confidence.'..."
+    },
+    {
+      "timestamp": "2026-07-11T08:16:39.833667+00:00",
+      "type": "RECALL",
+      "budget": 100.0,
+      "coherence": 0.0,
+      "active_arms": 0,
+      "message": "Hive Mind RECALL \u2014 precedent matched on decision context. Serving cited conclusion."
+    },
+    {
+      "timestamp": "2026-07-11T08:16:41.858344+00:00",
+      "type": "FINAL_OUTPUT",
+      "budget": 100.0,
+      "coherence": 1.0,
+      "active_arms": 1,
+      "decision": "PRECEDENT RECALL: Annual-cycle revalidation is sufficient.\n\nAnnual-cycle revalidation is sufficient. The model\u2019s PSI of 0.08 indicates minimal population drift, and the model maintains a strong accuracy with an AUC of 0.82. Additionally, the model was recently validated 2 months ago, suggesting stability. Therefore, there is no immediate need for an out-of-cycle revalidation.",
+      "precedent": {
+        "precedent_id": "ff48b95a-2be9-466d-bc95-fe25b71860bf",
+        "execution_id": "335c7b2c-bb97-4f10-880d-0c91bc9d1fe0",
+        "context_hash": "40a1968036ebc9db159aede0630a86c7861b0f7086af7e7be500d9e80e93985d",
+        "age_days": 0,
+        "original_decision_date": "2026-07-11T08:09:01.265000+00:00",
+        "stale": false
+      }
+    }
+  ]
+}

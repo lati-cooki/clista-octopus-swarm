@@ -1,10 +1,22 @@
+"""
+BLASTEMA PROTOCOL: HIVE MIND ARCHIVE (Firestore layer, collection `clista_hive_mind`)
+
+Stores and looks up decision precedents by exact SHA-256 context hash (see
+context_key.py) instead of embedding/cosine-similarity. A decision cache must
+never serve a decision that isn't keyed on an exact context match, so all
+write and lookup paths are fail-open: any Firestore error, missing key, or
+unusable stored record results in a no-op / None rather than a raised
+exception or a bad cache hit.
+
+Provenance is never flattened: a fresh consensus is archived as entry_type
+CRYSTALLIZATION; recalling a cached precedent logs a distinct entry_type
+RECALL that references the original precedent instead of re-archiving as a
+new crystallization.
+"""
+
 import logging
-import math
-import openai
-from reflex_arc import tool, step_boxed_tool
-from arm_state import ArmState
-import hashlib
 import uuid
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -18,88 +30,148 @@ except Exception as e:
     db = None
     hive_collection = None
 
-def get_doc_id(query: str) -> str:
-    # Fallback/Legacy ID generation
-    return hashlib.sha256(query.encode('utf-8')).hexdigest()
+# FieldFilter is the non-deprecated way to build .where() queries on recent
+# google-cloud-firestore versions (plain positional .where() emits a
+# UserWarning). Guarded separately from client init so an older installed
+# version missing this symbol can't break module import.
+try:
+    from google.cloud.firestore_v1.base_query import FieldFilter
+except ImportError:
+    FieldFilter = None
 
-def get_embedding(text: str) -> list[float]:
-    try:
-        client = openai.OpenAI()
-        response = client.embeddings.create(input=[text], model="text-embedding-3-small")
-        return response.data[0].embedding
-    except Exception as e:
-        logger.error(f"Embedding generation failed: {e}")
-        return []
 
-def cosine_similarity(v1: list[float], v2: list[float]) -> float:
-    if not v1 or not v2: return 0.0
-    dot_product = sum(a * b for a, b in zip(v1, v2))
-    norm_v1 = math.sqrt(sum(a * a for a in v1))
-    norm_v2 = math.sqrt(sum(b * b for b in v2))
-    if norm_v1 == 0 or norm_v2 == 0: return 0.0
-    return dot_product / (norm_v1 * norm_v2)
+def crystallize_to_memory(
+    user_prompt: str,
+    final_decision: str,
+    network_confidence: float,
+    context_hash: str | None = None,
+    decision_context: dict | None = None,
+    execution_id: str | None = None,
+) -> None:
+    """Archives a fresh consensus into the Hive Mind as entry_type CRYSTALLIZATION.
 
-def crystallize_to_memory(user_prompt: str, final_decision: str, network_confidence: float):
-    """Archives a successful consensus into the long-term Vector Memory."""
-    logger.info(f"Crystallizing to Hive Mind: '{user_prompt}' with confidence {network_confidence:.2f}")
-    if hive_collection is not None:
-        try:
-            # Generate embedding for semantic search
-            embedding = get_embedding(user_prompt)
-            doc_id = str(uuid.uuid4())
-            
-            payload = {
-                'prompt': user_prompt,
-                'decision': final_decision,
-                'confidence': network_confidence,
-                'timestamp': firestore.SERVER_TIMESTAMP
-            }
-            if embedding:
-                payload['embedding'] = embedding
-                
-            hive_collection.document(doc_id).set(payload)
-        except Exception as e:
-            logger.error(f"Failed to crystallize to Firestore: {e}")
-    else:
+    Fail-open rule: without an exact context_hash there is no key to look this
+    entry back up by, so DO NOT WRITE -- log and return. This also covers the
+    case where upstream context extraction failed (context_hash is None).
+    """
+    if context_hash is None:
+        logger.info(
+            "crystallize_to_memory: context_hash is None (extraction failed or "
+            "not supplied) -- skipping write. A cache entry with no key can "
+            "never be looked up, so it must not be written."
+        )
+        return
+
+    if hive_collection is None:
         logger.warning("Firestore is not initialized. Memory will not persist.")
+        return
 
-@tool
-@step_boxed_tool
-def query_hive_mind(query: str, arm_state: ArmState) -> str:
-    """Queries the long-term vector memory for past solutions using Semantic Similarity."""
-    logger.info(f"[{arm_state.arm_id}] Querying Semantic Hive Mind for: '{query}'")
-    
-    if hive_collection is not None:
-        try:
-            query_emb = get_embedding(query)
-            if not query_emb:
-                return "[HIVE MIND ERROR] Could not generate embeddings for semantic search."
-                
-            # Scan recent memories and calculate cosine similarity locally 
-            # (Allows zero-config vector search without GCP Vector Indexes)
-            docs = hive_collection.order_by('timestamp', direction=firestore.Query.DESCENDING).limit(100).stream()
-            
-            best_match = None
-            highest_sim = 0.0
-            
-            for doc in docs:
-                data = doc.to_dict()
-                doc_emb = data.get('embedding')
-                if doc_emb:
-                    sim = cosine_similarity(query_emb, doc_emb)
-                    if sim > highest_sim:
-                        highest_sim = sim
-                        best_match = data
-                        
-            if best_match and highest_sim >= 0.88:
-                decision = best_match.get('decision')
-                logger.info(f"[{arm_state.arm_id}] Semantic Hive Mind HIT! (Similarity: {highest_sim:.4f})")
-                return f"{decision}"
-            else:
-                logger.info(f"[{arm_state.arm_id}] No close semantic match found (Highest: {highest_sim:.4f}).")
-                
-        except Exception as e:
-            logger.error(f"[{arm_state.arm_id}] Firestore vector query failed: {e}")
-            
-    logger.info(f"[{arm_state.arm_id}] Hive Mind MISS. Calculation required.")
-    return ""
+    logger.info(
+        f"Crystallizing to Hive Mind: '{user_prompt}' with confidence {network_confidence:.2f}"
+    )
+    try:
+        doc_id = str(uuid.uuid4())
+        payload = {
+            'entry_type': 'CRYSTALLIZATION',
+            'prompt': user_prompt,
+            'decision': final_decision,
+            'confidence': network_confidence,
+            'context_hash': context_hash,
+            'decision_context': decision_context,
+            'execution_id': execution_id,
+            'timestamp': firestore.SERVER_TIMESTAMP,
+        }
+        hive_collection.document(doc_id).set(payload)
+    except Exception as e:
+        logger.error(f"Failed to crystallize to Firestore: {e}")
+
+
+def query_hive_mind_by_context(context_hash: str) -> dict | None:
+    """Exact-match precedent lookup by context_hash. None on no match / any error.
+
+    Only docs with entry_type == "CRYSTALLIZATION" AND an exact context_hash
+    match are eligible. Docs missing entry_type are legacy (pre-migration)
+    writes -- treated as non-matching (they also lack context_hash, so this
+    is belt-and-braces). Any matching doc whose `decision` is None/empty is
+    skipped: a decision cache must never serve a null decision, so if that's
+    the only match this returns None rather than a match with a null payload.
+
+    Sorting: we fetch all matches for the hash and pick the newest by
+    `timestamp` client-side, rather than adding `.order_by('timestamp')` to
+    the Firestore query. Combining an equality filter on `context_hash` with
+    an order_by on a different field requires a Firestore composite index;
+    client-side sorting avoids that infra dependency for what should be a
+    small candidate set per hash.
+    """
+    if hive_collection is None or context_hash is None:
+        return None
+
+    # The try covers the ENTIRE lookup -- query, candidate filtering, and
+    # newest-first selection -- so "None on any error" is literally true.
+    # Example this kills permanently: stored docs with mixed timestamp types
+    # (datetime vs string) would make max() raise TypeError; that must
+    # degrade to a cache miss, never a raised exception on the serving path.
+    try:
+        if FieldFilter is not None:
+            query = hive_collection.where(filter=FieldFilter('context_hash', '==', context_hash))
+        else:
+            query = hive_collection.where('context_hash', '==', context_hash)
+        docs = list(query.stream())
+
+        candidates = []
+        for doc in docs:
+            data = doc.to_dict() or {}
+            if data.get('entry_type') != 'CRYSTALLIZATION':
+                continue
+            if not data.get('decision'):
+                # Null/empty decision: never serve it, even if it's the only match.
+                continue
+            candidates.append((doc.id, data))
+
+        if not candidates:
+            return None
+
+        def _sort_key(item):
+            ts = item[1].get('timestamp')
+            # Missing timestamps sort oldest so they lose ties to any real timestamp.
+            return ts if ts is not None else datetime.min.replace(tzinfo=timezone.utc)
+
+        doc_id, data = max(candidates, key=_sort_key)
+
+        return {
+            'precedent_id': doc_id,
+            'decision': data.get('decision'),
+            'confidence': data.get('confidence'),
+            'timestamp': data.get('timestamp'),
+            'execution_id': data.get('execution_id'),
+            'context_hash': data.get('context_hash'),
+        }
+    except Exception as e:
+        logger.error(f"query_hive_mind_by_context: lookup failed (fail-open to miss): {e}")
+        return None
+
+
+def record_recall_event(original_precedent_id: str, context_hash: str, current_prompt: str) -> None:
+    """Logs a RECALL provenance event referencing the original precedent.
+
+    Recalled results never re-archive as fresh precedents: this writes
+    entry_type "RECALL" (never "CRYSTALLIZATION"), so provenance is never
+    flattened between an original crystallization and later recalls of it.
+    Fail-open: any Firestore error is logged and swallowed.
+    """
+    if hive_collection is None:
+        logger.warning("Firestore is not initialized. Recall event will not persist.")
+        return
+
+    try:
+        doc_id = str(uuid.uuid4())
+        payload = {
+            'entry_type': 'RECALL',
+            'references': original_precedent_id,
+            'context_hash': context_hash,
+            'prompt': current_prompt,
+            'timestamp': firestore.SERVER_TIMESTAMP,
+        }
+        hive_collection.document(doc_id).set(payload)
+    except Exception as e:
+        logger.error(f"Failed to record recall event to Firestore: {e}")
