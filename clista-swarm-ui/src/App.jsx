@@ -8,11 +8,12 @@ const truncateId = (id, len = 14) => {
 };
 
 // Render only the date portion of an ISO timestamp (or any parseable date string).
+// Uses the ISO date part (YYYY-MM-DD) so output is deterministic across browser locales.
 const formatDatePart = (dateStr) => {
   if (!dateStr) return '—';
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return String(dateStr).split('T')[0] || String(dateStr);
-  return d.toLocaleDateString();
+  return d.toISOString().split('T')[0];
 };
 
 function App() {
@@ -242,9 +243,9 @@ function App() {
                       <span className="text-xs text-slate-400 font-mono" title={finalPrecedent.precedent_id}>
                         ID: <span className="text-sky-300">{truncateId(finalPrecedent.precedent_id)}</span>
                       </span>
-                      {finalPrecedent.age_days !== undefined && (
-                        <span className="text-xs text-slate-400">{finalPrecedent.age_days}d old</span>
-                      )}
+                      <span className="text-xs text-slate-400">
+                        {finalPrecedent.age_days != null ? `${finalPrecedent.age_days}d old` : 'age unknown'}
+                      </span>
                       <span className="text-xs text-slate-400">
                         Decided {formatDatePart(finalPrecedent.original_decision_date)}
                       </span>
