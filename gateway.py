@@ -175,8 +175,8 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
     if status == 'CONSENSUS':
         await websocket.send_json(build_payload("CONSENSUS", f"Natural consensus achieved without arbitration!"))
         await asyncio.sleep(1)
-        final_decision = logic_arm.moltbook.crystallized_decision
-        
+        active_arms = [a for a in orchestrator.arms if a.moltbook.status == 'ACTIVE']
+        final_decision = next((a.moltbook.crystallized_decision for a in active_arms if a.moltbook.crystallized_decision), "Consensus reached without specific output.")
         arms_data = [{
             "arm_id": arm.arm_id,
             "status": arm.moltbook.status,
@@ -209,7 +209,7 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
         await websocket.send_json(build_payload("ARBITRATION", "[apex] GAVEL DROP. Forcing consensus."))
         await asyncio.sleep(1)
         
-        final_decision = arbitration_arm.moltbook.crystallized_decision
+        final_decision = arbitration_arm.moltbook.crystallized_decision or "Apex Arbitration reached without specific output."
         
         arms_data.append({
             "arm_id": arbitration_arm.arm_id,
