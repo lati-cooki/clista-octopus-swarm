@@ -129,20 +129,44 @@ def reground_rationale(
         return _REGROUND_FALLBACK_TEMPLATE.format(precedent_id=precedent_id, age=age)
 
 
-def conclusion_of(decision: str) -> str:
+# Keys whose value is treated as the citable holding when a cached decision
+# is a JSON object (arms often crystallize JSON blobs), in priority order.
+_CONCLUSION_KEYS = ("recommendation", "decision", "conclusion")
+
+
+def conclusion_of(decision: str) -> str | None:
     """Extracts the citable holding from a cached decision string.
 
     DR-hive-mind-cache-integrity.md remedy ("cite the holding, don't read
-    the prior opinion's facts into the current record"): fresh
-    crystallizations under the new contract store the final decision as the
-    conclusion. Defensively -- e.g. any legacy-format text mixing
-    conclusion+rationale -- only the FIRST paragraph (split on a blank line)
-    is ever treated as the citable holding; any rationale paragraphs beyond
-    it are never served.
+    the prior opinion's facts into the current record"). Live data showed
+    crystallized decisions from the apex arm are single-block JSON objects
+    whose OTHER fields (justification, key_indicators, ...) assert the
+    ORIGINAL query's facts -- serving the blob verbatim violates the DR rule.
+
+    - JSON object: return the first non-empty string value among
+      "recommendation" / "decision" / "conclusion" -- that is the holding.
+      If none of those keys is present, return None: NO part of the blob is
+      served verbatim; the caller falls back to serving only the re-grounded
+      rationale plus an explicit citation.
+    - Plain text (not JSON): first paragraph (split on a blank line) is the
+      holding; any rationale paragraphs beyond it are never served.
+
+    Returns None when no citable holding can be isolated.
     """
     if not decision:
-        return ""
-    return decision.split("\n\n")[0].strip()
+        return None
+    text = decision.strip()
+    try:
+        parsed = json.loads(text)
+    except (ValueError, TypeError):
+        parsed = None
+    if isinstance(parsed, dict):
+        for key in _CONCLUSION_KEYS:
+            value = parsed.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+    return text.split("\n\n")[0].strip() or None
 
 
 def _precedent_age_days(timestamp):
@@ -222,16 +246,32 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
         await asyncio.sleep(0.5)
 
         precedent_id = precedent.get("precedent_id")
-        conclusion = conclusion_of(precedent.get("decision") or "")
+        raw_decision = precedent.get("decision") or ""
+        conclusion = conclusion_of(raw_decision)
         age_days, stale = _precedent_age_days(precedent.get("timestamp"))
         human_age = f"{age_days} days" if age_days is not None else "unknown age"
 
-        # Blocking OpenAI call: offload to a thread like every other network
-        # call on this path so the WebSocket event loop never stalls on it.
-        regrounded = await asyncio.to_thread(
-            reground_rationale, conclusion, prompt, precedent_id or "", human_age
-        )
-        served_decision = f"PRECEDENT RECALL: {conclusion}\n\n{regrounded}"
+        if conclusion is not None:
+            # Blocking OpenAI call: offload to a thread like every other
+            # network call on this path so the WebSocket event loop never
+            # stalls on it.
+            regrounded = await asyncio.to_thread(
+                reground_rationale, conclusion, prompt, precedent_id or "", human_age
+            )
+            served_decision = f"PRECEDENT RECALL: {conclusion}\n\n{regrounded}"
+        else:
+            # No citable holding could be isolated (e.g. an unrecognized
+            # JSON blob). DR rule: never serve any of the cached record's
+            # text verbatim. The re-grounder receives the FULL cached
+            # decision as context so the answer is preserved, and the served
+            # body is only the re-grounded text plus an explicit citation.
+            regrounded = await asyncio.to_thread(
+                reground_rationale, raw_decision, prompt, precedent_id or "", human_age
+            )
+            citation = _REGROUND_FALLBACK_TEMPLATE.format(
+                precedent_id=precedent_id or "", age=human_age
+            )
+            served_decision = f"PRECEDENT RECALL: {regrounded}\n\n{citation}"
 
         ts = precedent.get("timestamp")
         try:

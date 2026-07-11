@@ -471,6 +471,107 @@ class TestGatewayRecallPath:
 
         mock_crystallize.assert_not_called()
 
+    def test_recall_json_decision_serves_only_recommendation(self):
+        """Real crystallized decisions from the apex arm are JSON blobs with
+        no paragraph breaks: the first-paragraph heuristic must not serve the
+        whole blob. Only the recommendation field is the citable holding;
+        justification/key_indicators fields assert the ORIGINAL query's
+        facts and must never appear in the served decision.
+        """
+        ws = FakeWebSocket()
+        ctx = MagicMock(name="ctx")
+        precedent = {
+            "precedent_id": "precedent-json",
+            "decision": (
+                '{"recommendation": "Annual-cycle revalidation is sufficient.", '
+                '"justification": "The model was validated 8 months ago and the '
+                'next validation is 4 months away.", '
+                '"key_indicators": {"time_to_next_validation": "4 months"}}'
+            ),
+            "confidence": 0.95,
+            "timestamp": datetime.now(timezone.utc) - timedelta(days=5),
+            "execution_id": "orig-exec-json",
+            "context_hash": "hash-json",
+        }
+        regrounded_text = "Grounded in the current query's stated facts, the annual cycle covers this model."
+
+        with patch.object(ArmState, "evaluate_payload", _fresh_arm_eval), \
+             patch("gateway.extract_decision_context", return_value=ctx), \
+             patch("gateway.context_hash", return_value="hash-json"), \
+             patch("gateway.query_hive_mind_by_context", return_value=precedent), \
+             patch("gateway.reground_rationale", return_value=regrounded_text), \
+             patch("gateway.record_recall_event"), \
+             patch("gateway.commit_audit_record", return_value="audit-json"), \
+             patch("gateway.crystallize_to_memory") as mock_crystallize:
+            asyncio.run(gateway.execute_swarm(ws, "webbank prompt, validated 2 months ago"))
+
+        final_outputs = [e for e in ws.sent if e["type"] == "FINAL_OUTPUT"]
+        assert len(final_outputs) == 1
+        decision_text = final_outputs[0]["decision"]
+
+        assert "Annual-cycle revalidation is sufficient." in decision_text
+        assert "8 months" not in decision_text
+        assert "4 months" not in decision_text
+        assert regrounded_text in decision_text
+
+        precedent_meta = final_outputs[0].get("precedent")
+        assert precedent_meta is not None
+        assert precedent_meta["precedent_id"] == "precedent-json"
+        assert precedent_meta["context_hash"] == "hash-json"
+
+        mock_crystallize.assert_not_called()
+
+    def test_recall_unrecognized_json_dict_falls_back_to_regrounded_only(self):
+        """A cached JSON dict without a recommendation/decision/conclusion
+        key has no isolatable citable holding: never serve any of the blob's
+        values verbatim. The served decision is the re-grounded text (the
+        re-grounder receives the FULL cached decision so the answer is
+        preserved) plus the citation template.
+        """
+        ws = FakeWebSocket()
+        ctx = MagicMock(name="ctx")
+        raw_decision = (
+            '{"verdict": "Approve the model as-is.", '
+            '"notes": "The model was validated 8 months ago."}'
+        )
+        precedent = {
+            "precedent_id": "precedent-oddjson",
+            "decision": raw_decision,
+            "confidence": 0.9,
+            "timestamp": datetime.now(timezone.utc) - timedelta(days=2),
+            "execution_id": "orig-exec-odd",
+            "context_hash": "hash-odd",
+        }
+        regrounded_text = "Based on the current query's facts, the model can continue on the annual cycle."
+
+        with patch.object(ArmState, "evaluate_payload", _fresh_arm_eval), \
+             patch("gateway.extract_decision_context", return_value=ctx), \
+             patch("gateway.context_hash", return_value="hash-odd"), \
+             patch("gateway.query_hive_mind_by_context", return_value=precedent), \
+             patch("gateway.reground_rationale", return_value=regrounded_text) as mock_reground, \
+             patch("gateway.record_recall_event"), \
+             patch("gateway.commit_audit_record", return_value="audit-odd"), \
+             patch("gateway.crystallize_to_memory") as mock_crystallize:
+            asyncio.run(gateway.execute_swarm(ws, "webbank prompt, validated 2 months ago"))
+
+        final_outputs = [e for e in ws.sent if e["type"] == "FINAL_OUTPUT"]
+        assert len(final_outputs) == 1
+        decision_text = final_outputs[0]["decision"]
+
+        # Re-grounded text plus explicit citation template, nothing verbatim
+        # from the cached blob.
+        assert regrounded_text in decision_text
+        assert "Consistent with precedent precedent-oddjson" in decision_text
+        assert "materially identical decision context" in decision_text
+        assert "Approve the model as-is." not in decision_text
+        assert "8 months" not in decision_text
+
+        # The re-grounder received the FULL cached decision as context so
+        # the answer is preserved through re-grounding.
+        assert mock_reground.call_args.args[0] == raw_decision
+
+        mock_crystallize.assert_not_called()
+
     def test_recall_does_not_archive_as_fresh_precedent(self):
         """After a recall, crystallize_to_memory is never called, and
         record_recall_event is called exactly once with the original
