@@ -320,8 +320,9 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
         arm = original_regrow(sealed_state, bdgt)
         if arm:
             arm.arm_id = "creative_arm_02"
-            arm.moltbook.confidence_weight = 0.4 
+            arm.moltbook.confidence_weight = 0.4
             arm.moltbook.crystallized_decision = "Strict enforcement required. Security > Speed."
+            arm.moltbook.scratchpad = "Regenerated from clean blueprint; stance carried from blueprint policy: strict enforcement."
         return arm
     mantle.regrow_arm = inject_regrow_state
     
