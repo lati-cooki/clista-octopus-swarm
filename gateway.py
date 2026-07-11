@@ -290,18 +290,24 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
 
         # A recall is auditable too: forensics found zero audit trail on the
         # old hit path (it returned before commit_audit_record ever ran).
-        await asyncio.to_thread(
-            commit_audit_record,
-            prompt=prompt,
-            final_decision=served_decision,
-            arms_data=[{
-                "arm_id": "hive_mind_recall",
-                "status": "ACTIVE",
-                "confidence_weight": precedent.get("confidence") or 0.0,
-                "scratchpad": f"RECALL of precedent {precedent_id}",
-            }],
-            metadata={"event": "RECALL", "precedent_id": precedent_id, "context_hash": h},
-        )
+        # Fail-open: a transient audit-write failure must never fail the
+        # recall closed before FINAL_OUTPUT -- a zero-cost recall cannot be
+        # allowed to die on a bookkeeping write. Log and continue.
+        try:
+            await asyncio.to_thread(
+                commit_audit_record,
+                prompt=prompt,
+                final_decision=served_decision,
+                arms_data=[{
+                    "arm_id": "hive_mind_recall",
+                    "status": "ACTIVE",
+                    "confidence_weight": precedent.get("confidence") or 0.0,
+                    "scratchpad": f"RECALL of precedent {precedent_id}",
+                }],
+                metadata={"event": "RECALL", "precedent_id": precedent_id, "context_hash": h},
+            )
+        except Exception as audit_error:
+            print(f"[GATEWAY] Recall audit write failed (continuing, fail-open): {audit_error}")
 
         await websocket.send_json({
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -452,7 +458,16 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
     orchestrator.molt_state()
 
     if decision_is_real:
-        await websocket.send_json(build_payload("MOLT", "Shedding ephemeral scratchpads. Crystallizing to Hive Mind."))
+        # Honest event stream: only claim "Crystallizing to Hive Mind" when a
+        # keyed write will actually happen. On a cache bypass the crystallize
+        # call below is a deliberate no-op (context_hash=None -> the moltbook
+        # layer refuses), so say so instead of claiming an archive.
+        if cache_bypassed:
+            await websocket.send_json(build_payload(
+                "MOLT", "Shedding ephemeral scratchpads. Not archiving (cache bypassed)."
+            ))
+        else:
+            await websocket.send_json(build_payload("MOLT", "Shedding ephemeral scratchpads. Crystallizing to Hive Mind."))
         await asyncio.sleep(1)
 
         await asyncio.to_thread(

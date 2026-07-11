@@ -112,7 +112,10 @@ class MantleOrchestrator:
                 
                 self.molt_state()
                 
-                # Archiving to Hive Mind
+                # Archiving to Hive Mind. Deliberate no-op: no context_hash is
+                # passed, so crystallize_to_memory refuses the write (fail-open
+                # rule). Keyed crystallization is driven by gateway.py -- do NOT
+                # "fix" this into an unkeyed write.
                 crystallize_to_memory(prompt, final_decision, avg_confidence)
                 
                 # MANUAL APPROVAL REQUIRED for CI/CD webhook. Autonomous deploy is disabled.
@@ -192,6 +195,9 @@ class MantleOrchestrator:
                 logger.info("Apex Arbitrator has resolved the deadlock. Forcing consensus.")
                 
                 self.molt_state()
+                # Deliberate no-op without context_hash (crystallize_to_memory
+                # refuses keyless writes); gateway.py drives keyed
+                # crystallization. Do NOT "fix" this into an unkeyed write.
                 crystallize_to_memory(prompt, final_decision, 1.0)
                 
                 # MANUAL APPROVAL REQUIRED for CI/CD webhook. Autonomous deploy is disabled.

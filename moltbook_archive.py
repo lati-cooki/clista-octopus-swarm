@@ -106,44 +106,49 @@ def query_hive_mind_by_context(context_hash: str) -> dict | None:
     if hive_collection is None or context_hash is None:
         return None
 
+    # The try covers the ENTIRE lookup -- query, candidate filtering, and
+    # newest-first selection -- so "None on any error" is literally true.
+    # Example this kills permanently: stored docs with mixed timestamp types
+    # (datetime vs string) would make max() raise TypeError; that must
+    # degrade to a cache miss, never a raised exception on the serving path.
     try:
         if FieldFilter is not None:
             query = hive_collection.where(filter=FieldFilter('context_hash', '==', context_hash))
         else:
             query = hive_collection.where('context_hash', '==', context_hash)
         docs = list(query.stream())
+
+        candidates = []
+        for doc in docs:
+            data = doc.to_dict() or {}
+            if data.get('entry_type') != 'CRYSTALLIZATION':
+                continue
+            if not data.get('decision'):
+                # Null/empty decision: never serve it, even if it's the only match.
+                continue
+            candidates.append((doc.id, data))
+
+        if not candidates:
+            return None
+
+        def _sort_key(item):
+            ts = item[1].get('timestamp')
+            # Missing timestamps sort oldest so they lose ties to any real timestamp.
+            return ts if ts is not None else datetime.min.replace(tzinfo=timezone.utc)
+
+        doc_id, data = max(candidates, key=_sort_key)
+
+        return {
+            'precedent_id': doc_id,
+            'decision': data.get('decision'),
+            'confidence': data.get('confidence'),
+            'timestamp': data.get('timestamp'),
+            'execution_id': data.get('execution_id'),
+            'context_hash': data.get('context_hash'),
+        }
     except Exception as e:
-        logger.error(f"query_hive_mind_by_context: Firestore query failed: {e}")
+        logger.error(f"query_hive_mind_by_context: lookup failed (fail-open to miss): {e}")
         return None
-
-    candidates = []
-    for doc in docs:
-        data = doc.to_dict() or {}
-        if data.get('entry_type') != 'CRYSTALLIZATION':
-            continue
-        if not data.get('decision'):
-            # Null/empty decision: never serve it, even if it's the only match.
-            continue
-        candidates.append((doc.id, data))
-
-    if not candidates:
-        return None
-
-    def _sort_key(item):
-        ts = item[1].get('timestamp')
-        # Missing timestamps sort oldest so they lose ties to any real timestamp.
-        return ts if ts is not None else datetime.min.replace(tzinfo=timezone.utc)
-
-    doc_id, data = max(candidates, key=_sort_key)
-
-    return {
-        'precedent_id': doc_id,
-        'decision': data.get('decision'),
-        'confidence': data.get('confidence'),
-        'timestamp': data.get('timestamp'),
-        'execution_id': data.get('execution_id'),
-        'context_hash': data.get('context_hash'),
-    }
 
 
 def record_recall_event(original_precedent_id: str, context_hash: str, current_prompt: str) -> None:

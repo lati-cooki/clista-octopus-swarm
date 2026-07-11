@@ -1,8 +1,12 @@
+# HISTORICAL REFERENCE: demonstrates the REMOVED embedding/semantic-recall
+# design (falsified by the 2026-07-10 three-phase test -- see
+# DR-hive-mind-cache-integrity.md). Preserved unexecuted; updated minimally so
+# imports resolve against the new context-hash API in moltbook_archive.py.
 import logging
 from arm_state import ArmState, MoltbookState
 from budget import MetabolicBudget
 from mantle import MantleOrchestrator
-from moltbook_archive import query_hive_mind
+from moltbook_archive import query_hive_mind_by_context
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
@@ -39,8 +43,10 @@ new_arm = ArmState(
     route="mantle->logic",
     moltbook=MoltbookState(status='ACTIVE', confidence_weight=1.0)
 )
-# Arm queries the hive mind instead of doing math
-recall_result = query_hive_mind(query=prompt, arm_state=new_arm)
+# Arm queries the hive mind instead of doing math. The old semantic lookup
+# API is gone; the new API needs a context hash this legacy demo never
+# computes, so the lookup is stubbed to its no-match result.
+recall_result = query_hive_mind_by_context(context_hash=None)
 new_arm.moltbook.crystallized_decision = recall_result
 mantle.arms = [new_arm]
 

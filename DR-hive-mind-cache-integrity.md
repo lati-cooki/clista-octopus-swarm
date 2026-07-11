@@ -139,6 +139,16 @@ against the current facts. On re-grounding failure, a neutral fallback template 
 rather than any cached sentence. This is the case-law fix made mechanical: cite the holding,
 regenerate the reasoning against the case in front of you.
 
+*Known limitation (no-holding fallback).* When the cached decision is a JSON object with no
+recognized conclusion field (`recommendation`/`decision`/`conclusion`), no citable holding
+can be isolated, and the re-grounder is given the *full* cached decision as context —
+deviating from the "conclusion only" input above — so the precedent's answer survives
+re-grounding instead of being lost. Nothing from the cached blob is ever served verbatim
+(the served body is the re-grounded text plus the neutral citation template), but on this
+branch the anti-transplant guarantee rests on the re-grounding prompt's instructions rather
+than on construction. Additionally, the served text carries a `"PRECEDENT RECALL: "` label
+prefix beyond the plan's wording, so a citation is visually unmistakable in the output.
+
 **RECALL/CRYSTALLIZATION provenance separation.** `crystallize_to_memory` writes
 `entry_type: "CRYSTALLIZATION"` and refuses to write at all when `context_hash` is `None`.
 A hit never re-crystallizes — it calls `record_recall_event`, which writes a distinct

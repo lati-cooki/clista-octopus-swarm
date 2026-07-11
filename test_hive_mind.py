@@ -241,6 +241,42 @@ class TestQueryHiveMindByContext:
         assert result["precedent_id"] == "newer"
         assert result["decision"] == "new decision"
 
+    def test_never_raises_on_poisoned_candidates(self):
+        """"None on any error" must be literally true: a candidate set with
+        mixed timestamp types (datetime vs string) makes the newest-first
+        max() comparison raise TypeError internally -- the lookup must
+        degrade to a miss (or a valid dict), never propagate an exception
+        onto the serving path.
+        """
+        from datetime import datetime as dt, timezone as tz
+
+        typed = _make_doc(
+            "typed-ts",
+            {
+                "entry_type": "CRYSTALLIZATION",
+                "decision": "decision with datetime ts",
+                "context_hash": "h",
+                "timestamp": dt(2026, 1, 1, tzinfo=tz.utc),
+            },
+        )
+        stringly = _make_doc(
+            "string-ts",
+            {
+                "entry_type": "CRYSTALLIZATION",
+                "decision": "decision with string ts",
+                "context_hash": "h",
+                "timestamp": "2026-01-01T00:00:00Z",
+            },
+        )
+        mock_collection = MagicMock()
+        mock_collection.where.return_value.stream.return_value = [typed, stringly]
+
+        with patch.object(moltbook_archive, "hive_collection", mock_collection):
+            # Must not raise.
+            result = moltbook_archive.query_hive_mind_by_context("h")
+
+        assert result is None or isinstance(result, dict)
+
 
 class TestRecordRecallEvent:
     def test_writes_entry_type_recall_with_references(self):
@@ -756,3 +792,45 @@ class TestGatewayRecallPath:
         mock_crystallize.assert_called_once()
         crystallize_kwargs = mock_crystallize.call_args.kwargs
         assert crystallize_kwargs["context_hash"] is None
+
+        # Honest event stream: the crystallize call above is a deliberate
+        # no-op (context_hash=None -> the moltbook layer refuses), so the
+        # client must never be told "Crystallizing to Hive Mind" here.
+        all_messages = [e.get("message", "") for e in ws.sent]
+        assert not any("Crystallizing to Hive Mind" in m for m in all_messages)
+        assert any("Not archiving (cache bypassed)" in m for m in all_messages)
+
+    def test_recall_survives_audit_failure(self):
+        """A transient audit-write failure on the recall path must not fail
+        the recall closed: FINAL_OUTPUT with precedent metadata is still
+        served (a zero-cost recall never dies on a bookkeeping write).
+        """
+        ws = FakeWebSocket()
+        ctx = MagicMock(name="ctx")
+        precedent = {
+            "precedent_id": "precedent-auditfail",
+            "decision": "Conclusion text.",
+            "confidence": 0.9,
+            "timestamp": datetime.now(timezone.utc) - timedelta(days=1),
+            "execution_id": "orig-exec-6",
+            "context_hash": "hash-auditfail",
+        }
+
+        with patch.object(ArmState, "evaluate_payload", _fresh_arm_eval), \
+             patch("gateway.extract_decision_context", return_value=ctx), \
+             patch("gateway.context_hash", return_value="hash-auditfail"), \
+             patch("gateway.query_hive_mind_by_context", return_value=precedent), \
+             patch("gateway.reground_rationale", return_value="Re-grounded."), \
+             patch("gateway.record_recall_event") as mock_recall, \
+             patch("gateway.commit_audit_record", side_effect=Exception("firestore audit down")) as mock_audit, \
+             patch("gateway.crystallize_to_memory") as mock_crystallize:
+            asyncio.run(gateway.execute_swarm(ws, "some prompt"))
+
+        mock_audit.assert_called_once()  # the write was attempted
+
+        final_outputs = [e for e in ws.sent if e["type"] == "FINAL_OUTPUT"]
+        assert len(final_outputs) == 1
+        assert final_outputs[0]["precedent"]["precedent_id"] == "precedent-auditfail"
+
+        mock_recall.assert_called_once()
+        mock_crystallize.assert_not_called()
