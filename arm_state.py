@@ -113,15 +113,25 @@ class ArmState:
     def _call_gemini(self, system_prompt: str, user_prompt: str):
         import google.generativeai as genai
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        model = genai.GenerativeModel(self.model, system_instruction=system_prompt)
+        instruction = f"{system_prompt}\n\nRespond ONLY with raw, valid JSON matching this schema: {MoltbookState.model_json_schema()}"
+        model = genai.GenerativeModel(self.model, system_instruction=instruction)
         response = model.generate_content(
             user_prompt,
             generation_config=genai.GenerationConfig(
-                response_mime_type="application/json",
-                response_schema=MoltbookState
+                response_mime_type="application/json"
             )
         )
-        parsed_result = MoltbookState.model_validate_json(response.text)
+        
+        text = response.text.strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        elif text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+        text = text.strip()
+        
+        parsed_result = MoltbookState.model_validate_json(text)
         self._sync_state(parsed_result)
 
     def _call_anthropic(self, system_prompt: str, user_prompt: str):
