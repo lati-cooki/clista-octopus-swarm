@@ -8,9 +8,17 @@ import uuid
 
 class FirestoreAuditLedger:
     def __init__(self, collection_name="clista_audit_logs"):
-        # Automatically inherits the Cloud Run service account credentials
-        self.db = firestore.Client()
-        self.collection = self.db.collection(collection_name)
+        self.collection_name = collection_name
+        self._db = None
+        self._collection = None
+
+    @property
+    def collection(self):
+        if self._collection is None:
+            # Automatically inherits the Cloud Run service account credentials
+            self._db = firestore.Client()
+            self._collection = self._db.collection(self.collection_name)
+        return self._collection
 
     def record_execution(self, prompt: str, final_decision: str, arms_data: list, metadata: dict):
         """
