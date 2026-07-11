@@ -9,27 +9,36 @@ import uuid
 class FirestoreAuditLedger:
     def __init__(self, collection_name="clista_audit_logs"):
         # Automatically inherits the Cloud Run service account credentials
-        self.db = firestore.Client()
-        self.collection = self.db.collection(collection_name)
+        try:
+            self.db = firestore.Client()
+            self.collection = self.db.collection(collection_name)
+        except Exception as e:
+            print(f"Failed to initialize Firestore: {e}")
+            self.db = None
+            self.collection = None
 
     def record_execution(self, prompt: str, final_decision: str, arms_data: list, metadata: dict):
         """
         Commits the complete, unmolted execution record to the audit trail.
         """
         record_id = str(uuid.uuid4())
-        doc_ref = self.collection.document(record_id)
         
         payload = {
             "record_id": record_id,
-            "timestamp": firestore.SERVER_TIMESTAMP,
+            "timestamp": firestore.SERVER_TIMESTAMP if self.db else "MOCKED_TIMESTAMP",
             "prompt": prompt,
             "final_decision": final_decision,
             "arms_execution_history": arms_data, # Contains raw scratchpads and tool outputs
             "metadata": metadata
         }
         
-        doc_ref.set(payload)
-        print(f"[AUDIT LEDGER] Full execution history permanently recorded. (ID: {record_id})")
+        if self.collection:
+            doc_ref = self.collection.document(record_id)
+            doc_ref.set(payload)
+            print(f"[AUDIT LEDGER] Full execution history permanently recorded. (ID: {record_id})")
+        else:
+            print(f"[AUDIT LEDGER] MOCKED execution history recorded. (ID: {record_id})")
+
         return record_id
 
 # Global persistent instance for the ledger
