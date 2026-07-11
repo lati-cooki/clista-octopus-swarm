@@ -1,0 +1,8 @@
+{
+  "name": "clista-octopus-swarm-root",
+  "version": "1.0.0",
+  "scripts": {
+    "install": "cd clista-swarm-ui && npm install",
+    "build": "cd clista-swarm-ui && npm run build"
+  }
+}

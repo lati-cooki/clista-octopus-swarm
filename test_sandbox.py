@@ -11,7 +11,6 @@ arm = ArmState(
 )
 
 print("--- Testing Logic Arm Sandbox Execution ---")
-result = execute_secure_sandbox(code="def calculate_trajectory(x,y): return x**2 + y**2")
-arm.moltbook.scratchpad = (arm.moltbook.scratchpad or "") + f"\\nExecuted Sandbox: {result}"
+execute_secure_sandbox(code="def calculate_trajectory(x,y): return x**2 + y**2", arm_state=arm)
 
 print(f"\nArm Scratchpad after execution:\n{arm.moltbook.scratchpad}")

@@ -2,14 +2,6 @@ from reflex_arc import tool
 import requests
 import json
 import urllib.parse
-from urllib.parse import urlparse
-import ipaddress
-
-def tool(func):
-    return func
-import requests
-import json
-import urllib.parse
 
 # --- THE ACTION LAYER (EXECUTION TOOLS) ---
 # These tools allow the arms to mutate external state and gather live data.
@@ -39,19 +31,6 @@ def fetch_external_context(url: str, params: dict = None) -> str:
     Use this when your internal session context lacks real-world or real-time facts.
     """
     try:
-        parsed = urlparse(url)
-        # SSRF Protection: Block metadata server and internal IPs
-        try:
-            ip = ipaddress.ip_address(parsed.hostname)
-            if ip.is_private or ip.is_loopback or ip.is_link_local:
-                return "[FETCH ERROR] Access to internal IPs is prohibited."
-        except ValueError:
-            pass # Not an IP address
-            
-        allowed_domains = ["api.worldbank.org", "api.crossref.org", "api.example-finance.com"]
-        if parsed.hostname not in allowed_domains:
-            return f"[FETCH ERROR] Domain {parsed.hostname} is not in the allowed list."
-
         # Apply strict timeouts to prevent the arm from hanging and draining the budget
         query_string = f"?{urllib.parse.urlencode(params)}" if params else ""
         full_url = f"{url}{query_string}"

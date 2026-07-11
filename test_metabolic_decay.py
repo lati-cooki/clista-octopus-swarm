@@ -24,8 +24,7 @@ print(f"{remaining:.4f}")
 """
 
 # Logic Arm calls the sandbox tool
-result = execute_secure_sandbox(code=python_code)
-arm.moltbook.scratchpad = (arm.moltbook.scratchpad or "") + f"\\nExecuted Sandbox: {result}"
+result = execute_secure_sandbox(code=python_code, arm_state=arm)
 
 # Logic arm receives result and crystallizes it
 arm.moltbook.crystallized_decision = result
