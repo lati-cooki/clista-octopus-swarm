@@ -226,7 +226,11 @@ async def execute_swarm(websocket: WebSocket, prompt: str):
         age_days, stale = _precedent_age_days(precedent.get("timestamp"))
         human_age = f"{age_days} days" if age_days is not None else "unknown age"
 
-        regrounded = reground_rationale(conclusion, prompt, precedent_id or "", human_age)
+        # Blocking OpenAI call: offload to a thread like every other network
+        # call on this path so the WebSocket event loop never stalls on it.
+        regrounded = await asyncio.to_thread(
+            reground_rationale, conclusion, prompt, precedent_id or "", human_age
+        )
         served_decision = f"PRECEDENT RECALL: {conclusion}\n\n{regrounded}"
 
         ts = precedent.get("timestamp")

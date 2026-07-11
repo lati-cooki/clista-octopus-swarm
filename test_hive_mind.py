@@ -537,6 +537,49 @@ class TestGatewayRecallPath:
         assert "CONSENSUS" not in types
         mock_crystallize.assert_not_called()
 
+    def test_recall_reground_runs_off_event_loop(self):
+        """reground_rationale is a blocking OpenAI network call; the recall
+        path must run it via asyncio.to_thread, never directly on the event
+        loop. Inside a to_thread worker, asyncio.get_running_loop() raises
+        RuntimeError -- so a probe that records whether a running loop is
+        visible distinguishes on-loop execution from thread offload.
+        """
+        ws = FakeWebSocket()
+        ctx = MagicMock(name="ctx")
+        precedent = {
+            "precedent_id": "precedent-thread",
+            "decision": "Conclusion text.",
+            "confidence": 0.9,
+            "timestamp": datetime.now(timezone.utc) - timedelta(days=1),
+            "execution_id": "orig-exec-5",
+            "context_hash": "hash-thread",
+        }
+        observed = {}
+
+        def probe_reground(*args, **kwargs):
+            try:
+                asyncio.get_running_loop()
+                observed["on_event_loop"] = True
+            except RuntimeError:
+                observed["on_event_loop"] = False
+            return "Re-grounded."
+
+        with patch.object(ArmState, "evaluate_payload", _fresh_arm_eval), \
+             patch("gateway.extract_decision_context", return_value=ctx), \
+             patch("gateway.context_hash", return_value="hash-thread"), \
+             patch("gateway.query_hive_mind_by_context", return_value=precedent), \
+             patch("gateway.reground_rationale", side_effect=probe_reground), \
+             patch("gateway.record_recall_event"), \
+             patch("gateway.commit_audit_record", return_value="audit-5"), \
+             patch("gateway.crystallize_to_memory"):
+            asyncio.run(gateway.execute_swarm(ws, "some prompt"))
+
+        assert observed, "reground_rationale was never called on the recall path"
+        assert observed["on_event_loop"] is False, (
+            "reground_rationale executed on the event loop thread's running "
+            "loop -- it must be offloaded via asyncio.to_thread"
+        )
+
     def test_extraction_failure_bypasses_cache(self):
         """extract_decision_context returning None must skip the cache
         lookup entirely, skip the crystallize write (context_hash=None
