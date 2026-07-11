@@ -170,6 +170,11 @@ class TestExtractDecisionContext:
         # as response_format (DecisionContext's dict field is rejected by the API).
         call_kwargs = mock_client.beta.chat.completions.parse.call_args.kwargs
         assert call_kwargs["response_format"] is DecisionContextExtraction
+        # Extraction must be maximally deterministic — hash stability depends on
+        # it (live trials at default temperature dropped a metric, causing a
+        # false cache miss).
+        assert call_kwargs["temperature"] == 0.0
+        assert call_kwargs["seed"] == 42
 
     def test_extraction_wire_model_is_strict_schema_compatible(self):
         # Encodes the exact OpenAI strict structured-output constraint that bit

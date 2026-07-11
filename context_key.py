@@ -140,6 +140,11 @@ def extract_decision_context(prompt: str) -> Optional[DecisionContext]:
                 {"role": "user", "content": prompt},
             ],
             response_format=DecisionContextExtraction,
+            # Extraction must be maximally deterministic — hash stability depends
+            # on it (a nondeterministic extraction causes false cache misses:
+            # safe, but wasted compute).
+            temperature=0.0,
+            seed=42,
         )
         choices = response.choices
         if not choices:
