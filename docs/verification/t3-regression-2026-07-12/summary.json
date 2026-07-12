@@ -1,0 +1,63 @@
+[
+  {
+    "phase": "phase1",
+    "event_types": [
+      "SYSTEM",
+      "INFO",
+      "INFO",
+      "SPAWN",
+      "TELEMETRY",
+      "SEAL",
+      "BLASTEMA",
+      "SPAWN",
+      "TELEMETRY",
+      "WARNING",
+      "SPAWN",
+      "TELEMETRY",
+      "ARBITRATION",
+      "MOLT",
+      "FINAL_OUTPUT"
+    ],
+    "spawned_arms": 3,
+    "recall": false,
+    "final_budget": 75.0,
+    "final_message_head": ""
+  },
+  {
+    "phase": "phase2",
+    "event_types": [
+      "SYSTEM",
+      "INFO",
+      "INFO",
+      "SPAWN",
+      "TELEMETRY",
+      "SEAL",
+      "BLASTEMA",
+      "SPAWN",
+      "TELEMETRY",
+      "WARNING",
+      "SPAWN",
+      "TELEMETRY",
+      "ARBITRATION",
+      "MOLT",
+      "FINAL_OUTPUT"
+    ],
+    "spawned_arms": 3,
+    "recall": false,
+    "final_budget": 75.0,
+    "final_message_head": ""
+  },
+  {
+    "phase": "phase3",
+    "event_types": [
+      "SYSTEM",
+      "INFO",
+      "RECALL",
+      "FINAL_OUTPUT"
+    ],
+    "spawned_arms": 0,
+    "recall": true,
+    "final_budget": 100.0,
+    "final_message_head": ""
+  }
+]
